@@ -1,0 +1,3055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="VDO Magnifier — an accessible low-vision tool for magnifying VDO.ninja streams with colour themes, reading masks, and full keyboard support.">
+    <title>VDO.ninja Magnifier</title>
+    <style>
+        :root {
+            --bg-color: #000000;
+            --panel-bg: #1a1a1a;
+            --text-color: #ffffff;
+            --button-bg: #333333;
+            --button-hover: #ffffff;
+            --button-hover-text: #000000;
+            --border-color: #ffffff;
+            /* UI scale: 1.0 = original compact size.
+               Default ships at 1.44 (1.2 × 1.2 per requests).
+               Override with ?ui=1.0 (compact), ?ui=1.2, ?ui=2.0 (large), etc. */
+            --ui-scale: 1.44;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        /* Block Safari's swipe-back/forward gesture at the root.
+           overscroll-behavior on body alone is insufficient — Safari checks html too. */
+        html {
+            overscroll-behavior-x: none;
+            overscroll-behavior-y: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow-y: auto; 
+            overflow-x: hidden;
+            overscroll-behavior: none; 
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        body.video-active {
+            overflow: hidden; 
+        }
+
+        /* --- Large Custom Cursor --- */
+        /* A single wildcard rule covering every descendant of body.large-cursor-active.
+           The !important ensures it wins against every element-level cursor declaration
+           (grab, grabbing, pointer, not-allowed, ns-resize, etc.) in the entire app. */
+        body.large-cursor-active,
+        body.large-cursor-active * {
+            cursor: url('data:image/svg+xml;utf8,<svg width="48" height="48" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><polygon points="4,4 28,14 17,17 22,27 18,29 13,19 6,26" fill="white" stroke="black" stroke-width="2" stroke-linejoin="round"/></svg>') 4 4, auto !important;
+        }
+
+        /* --- Menu Toggle Indicators --- */
+        /* Each toggleable menu button gets a small indicator prepended.
+           .ind-check = ✓ (active), .ind-box = □ (inactive) */
+        .menu-indicator {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.2em;
+            height: 1.2em;
+            flex-shrink: 0;
+            font-size: 1em;
+            line-height: 1;
+        }
+
+        /* --- Skip Navigation Link (2.4.1) --- */
+        /* Visually hidden until focused — allows keyboard users to jump past the toolbar */
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 0;
+            z-index: 9999;
+            padding: 12px 20px;
+            background: var(--text-color);
+            color: var(--bg-color);
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 0 0 8px 0;
+            text-decoration: none;
+            transition: top 0.1s;
+        }
+        .skip-link:focus {
+            top: 0;
+            outline: 3px solid var(--bg-color);
+            outline-offset: -3px;
+        }
+
+        /* --- Main UI Toolbar --- */
+        #toolbar {
+            background-color: var(--panel-bg);
+            padding: calc(8px * var(--ui-scale)) calc(12px * var(--ui-scale));
+            border-bottom: 3px solid var(--border-color);
+            display: flex;
+            flex-wrap: nowrap; 
+            flex-shrink: 0; 
+            gap: calc(8px * var(--ui-scale));
+            align-items: center;
+            z-index: 60; 
+            overflow: visible; 
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .tool-btn {
+            background: var(--button-bg);
+            color: var(--text-color);
+            border: 2px solid var(--border-color);
+            padding: calc(6px * var(--ui-scale)) calc(11px * var(--ui-scale));
+            font-size: calc(0.9rem * var(--ui-scale));
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: calc(6px * var(--ui-scale));
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .tool-btn:hover:not(:disabled), .tool-btn:focus:not(:disabled) {
+            background: var(--button-hover);
+            color: var(--button-hover-text);
+            outline: 3px solid var(--text-color);
+        }
+
+        .tool-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        .tool-btn.active-state {
+            background: var(--text-color);
+            color: var(--bg-color);
+        }
+
+        .toolbar-divider {
+            min-width: 2px;
+            height: calc(24px * var(--ui-scale));
+            background-color: var(--border-color);
+            opacity: 0.5;
+            margin: 0 4px;
+            border-radius: 2px;
+        }
+
+        .toolbar-themes-group {
+            display: flex;
+            gap: 6px;
+            flex-wrap: nowrap;
+            align-items: center;
+        }
+
+        .toolbar-theme-btn {
+            width: calc(30px * var(--ui-scale));
+            height: calc(30px * var(--ui-scale));
+            border: 2px solid;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: calc(0.9rem * var(--ui-scale));
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.1s;
+            flex-shrink: 0;
+        }
+
+        .toolbar-theme-btn:active { cursor: grabbing; }
+        .toolbar-theme-btn:hover, .toolbar-theme-btn:focus {
+            transform: scale(1.15);
+            outline: 2px solid var(--text-color);
+            z-index: 5;
+        }
+
+        .btn-natural {
+            background: linear-gradient(135deg, #1f0b0b 0%, #0b1f0b 50%, #0b0b1f 100%) !important;
+            border-top-color: #ff5555 !important;
+            border-bottom-color: #5555ff !important;
+            border-left-color: #55ff55 !important;
+            border-right-color: #ffff55 !important;
+        }
+
+        .btn-natural:hover, .btn-natural:focus {
+            background: linear-gradient(135deg, #3a1515 0%, #153a15 50%, #15153a 100%) !important;
+        }
+
+        .drag-over {
+            opacity: 0.4;
+            border-style: dashed !important;
+        }
+
+        /* --- Dropdown Menus --- */
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            background-color: var(--panel-bg);
+            min-width: 260px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.8);
+            z-index: 70;
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            top: 100%;
+            left: 0;
+            margin-top: 8px;
+            padding: 8px;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .dropdown-content.show {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .dropdown-content button {
+            width: 100%;
+            justify-content: flex-start;
+            border-color: transparent; 
+        }
+
+        .dropdown-content button:hover, .dropdown-content button:focus {
+            border-color: var(--text-color);
+        }
+
+        .dropdown-theme-btn {
+            border-width: 2px !important;
+            justify-content: center !important;
+            padding: 10px !important;
+            cursor: grab;
+        }
+        .dropdown-theme-btn:active { cursor: grabbing; }
+        
+        .dropdown-theme-btn:hover, .dropdown-theme-btn:focus {
+            transform: scale(1.02);
+            outline: 2px solid var(--text-color);
+            outline-offset: -2px;
+        }
+
+        #theme-dropdown-container { display: none; } 
+
+        @media (max-width: 600px) {
+            #toolbar-themes { display: none; }
+            #extended-themes-container { display: none; }
+            #theme-dropdown-container { display: inline-block; } 
+            .tool-btn { padding: 8px 10px; }
+        }
+
+        /* --- Setup Screen --- */
+        /* main wraps both setup-screen-wrapper and workspace as the page's primary landmark */
+        main {
+            display: contents; /* lets flex children of body pass through naturally */
+        }
+
+        #setup-screen-wrapper {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-y: auto;
+            overflow-x: hidden;
+            flex-grow: 1;
+            /* Contain scroll so Safari pull-to-refresh and swipe-back can't fire
+               when the user scrolls the home screen theme list */
+            overscroll-behavior: contain;
+        }
+
+        #setup-screen {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transform-origin: top center;
+            transition: transform 0.2s ease;
+        }
+
+        #setup-screen h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+
+        #vdo-input {
+            width: 100%;
+            max-width: 600px;
+            padding: 15px;
+            font-size: 1.5rem;
+            background: var(--bg-color);
+            color: var(--text-color);
+            border: 3px solid var(--border-color);
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        #vdo-input:focus {
+            outline: 4px solid var(--text-color);
+        }
+
+        .primary-btn {
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            background: var(--text-color);
+            color: var(--bg-color);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            margin-bottom: 30px;
+        }
+
+        .primary-btn:hover, .primary-btn:focus {
+            opacity: 0.8;
+            outline: 4px solid var(--text-color);
+            outline-offset: 2px;
+        }
+
+        /* --- Theme Grid --- */
+        .section-title {
+            font-size: 1.5rem;
+            margin-top: 20px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 5px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .theme-container-flex {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .theme-swatch {
+            flex: 0 0 calc(33.333% - 10px); 
+            border: 3px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px 10px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            transition: transform 0.1s;
+        }
+        .theme-swatch:active { cursor: grabbing; }
+
+        .theme-swatch:hover, .theme-swatch:focus {
+            transform: scale(1.05);
+            outline: 3px solid var(--text-color);
+            z-index: 5;
+        }
+
+        @media (max-width: 768px) {
+            .theme-swatch {
+                flex: 0 0 100%; 
+            }
+        }
+
+        /* Side-by-Side Homescreen Action Buttons */
+        .homescreen-actions-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            width: 100%;
+            margin-bottom: 20px;
+            margin-top: 10px;
+        }
+
+        .btn-extended-toggle {
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 12px 20px;
+            color: var(--text-color);
+            background: var(--button-bg);
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s;
+            flex: 1 1 auto;
+            justify-content: center;
+        }
+
+        .btn-extended-toggle:hover, .btn-extended-toggle:focus {
+            background: var(--button-hover);
+            color: var(--button-hover-text);
+            transform: scale(1.02);
+            outline: 3px solid var(--text-color);
+            outline-offset: 2px;
+        }
+
+        #btn-custom-modal-home:hover, #btn-custom-modal-home:focus {
+            background: var(--bg-color);
+            color: var(--text-color);
+            border-style: dashed;
+        }
+
+        /* --- Hotkey Grid --- */
+        .hotkey-container-flex {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+        }
+
+        .shortcut-category {
+            font-size: 1.2rem;
+            margin-top: 15px;
+            margin-bottom: 10px;
+            width: 100%;
+            text-align: center;
+            opacity: 0.8;
+            color: var(--border-color);
+        }
+
+        .hotkey-card {
+            background: var(--button-bg);
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px;
+            flex: 0 1 auto;
+            min-width: 130px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .hotkey-card kbd {
+            background: var(--bg-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        /* --- Workspace Area & Reading Tools --- */
+        #workspace {
+            display: none; 
+            flex-grow: 1;
+            position: relative;
+            background-color: var(--bg-color);
+            cursor: grab;
+            touch-action: none; 
+            overflow: hidden; 
+            overscroll-behavior: none;
+        }
+
+        #workspace:active {
+            cursor: grabbing;
+        }
+
+        #transform-layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            transform-origin: center center;
+            will-change: transform, filter;
+            transition: filter 0.3s ease-out;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Applied briefly after keyboard pan / zoom button to give a gentle snap feel */
+        #transform-layer.smooth-snap {
+            transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.3s ease-out;
+        }
+
+        #transform-layer.fast-tracking {
+            transition: none;
+        }
+
+        #vdo-frame {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            border: none;
+            z-index: 1;
+            pointer-events: none; 
+            transition: transform 0.3s ease;
+        }
+
+        /* Overlays for Reading Support */
+        .reading-guide {
+            position: absolute;
+            left: 0; right: 0;
+            height: 6px;
+            background-color: var(--text-color);
+            z-index: 20;
+            pointer-events: auto;
+            cursor: grab;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.8);
+            border-radius: 3px;
+        }
+        .reading-guide:active { cursor: grabbing; }
+
+        .reading-mask {
+            position: absolute;
+            left: 0; right: 0;
+            background-color: var(--bg-color);
+            opacity: 0.85; 
+            z-index: 20;
+            /* Pass all pointer events through the dark overlay to the iframe underneath.
+               Only the resize handles (.mask-handle-*) and the gap hitbox keep pointer-events. */
+            pointer-events: none;
+        }
+        #reading-mask-top { top: 0; }
+        #reading-mask-bottom { bottom: 0; }
+
+        .mask-handle-top, .mask-handle-bottom {
+            position: absolute;
+            left: 0; right: 0;
+            height: 12px;
+            background-color: var(--text-color);
+            opacity: 0.35; /* was 0.15 — raised to meet 3:1 non-text contrast (WCAG 1.4.11) */
+            cursor: ns-resize;
+            z-index: 21;
+            pointer-events: auto; /* Explicitly re-enable — parent mask is pointer-events:none */
+            transition: opacity 0.2s;
+        }
+        .mask-handle-top:hover, .mask-handle-bottom:hover { opacity: 0.75; }
+        .mask-handle-top { bottom: 0; } 
+        .mask-handle-bottom { top: 0; } 
+
+        .mask-gap-hitbox {
+            position: absolute;
+            left: 0; right: 0;
+            z-index: 19;
+            cursor: grab;
+        }
+        .mask-gap-hitbox:active { cursor: grabbing; }
+
+        /* --- Status Indicator & Hints --- */
+        .status-badge {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            color: var(--text-color);
+            border: 2px solid var(--border-color);
+            padding: calc(10px * var(--ui-scale)) calc(18px * var(--ui-scale));
+            font-size: calc(1.1rem * var(--ui-scale));
+            border-radius: 8px;
+            z-index: 40;
+            pointer-events: none;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        #reading-hint {
+            position: absolute;
+            bottom: calc(70px * var(--ui-scale));
+            left: 20px;
+            font-size: calc(0.85rem * var(--ui-scale));
+            padding: calc(8px * var(--ui-scale)) calc(12px * var(--ui-scale));
+            background: var(--button-bg);
+            color: var(--text-color);
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            z-index: 40;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        
+        #reading-hint.show {
+            opacity: 0.9;
+            pointer-events: auto;
+        }
+
+        /* --- Custom Color Modal --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 999;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-content {
+            background: var(--panel-bg);
+            color: var(--text-color);
+            border: 3px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            width: 90%;
+            max-width: 550px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            max-height: 95vh;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
+        .modal-content h2 {
+            text-align: center;
+            margin-bottom: 5px;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .palette-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .palette-btn {
+            min-height: 44px; /* WCAG 2.5.5 touch target minimum */
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .palette-btn:hover, .palette-btn:focus {
+            transform: scale(1.15);
+            outline: 2px solid var(--text-color);
+            outline-offset: 2px;
+        }
+
+        .color-slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: var(--button-bg);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .color-slider-group h3 {
+            font-size: 1.2rem;
+            margin-bottom: 5px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            padding-bottom: 5px;
+        }
+
+        .color-slider-group label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .color-slider-group input[type="range"] {
+            width: 70%;
+            cursor: pointer;
+        }
+
+        #custom-preview-box {
+            padding: 20px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-align: center;
+            border: 3px solid;
+            border-radius: 8px;
+            margin: 10px 0;
+            transition: all 0.1s;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 5px;
+        }
+
+        .modal-actions button {
+            flex: 1;
+            padding: 15px;
+            font-size: 1.2rem;
+            justify-content: center;
+            text-align: center;
+        }
+
+        /* Cancel is a .tool-btn whose flex layout defaults to flex-start;
+           override explicitly so the text centres inside the button. */
+        .modal-actions .tool-btn {
+            justify-content: center;
+        }
+        /* --- Range Slider Focus --- */
+        /* Browser defaults for range inputs are often invisible on dark backgrounds.
+           An explicit outline ensures keyboard users can see which slider is active. */
+        input[type="range"]:focus {
+            outline: 3px solid var(--text-color);
+            outline-offset: 3px;
+            border-radius: 3px;
+        }
+
+        /* --- Reduced Motion --- */
+        /* Triggered by the OS-level prefers-reduced-motion setting (default baseline)
+           OR by body.reduce-motion-active (the in-app manual toggle).
+           Users can override the OS setting by toggling it off in More Options. */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                transition-duration: 0.01ms !important;
+                animation-duration: 0.01ms !important;
+            }
+            #transform-layer,
+            #transform-layer.smooth-snap,
+            #transform-layer.fast-tracking {
+                transition: none !important;
+            }
+        }
+        /* Manual toggle — class applied by JS regardless of OS setting */
+        body.reduce-motion-active *,
+        body.reduce-motion-active *::before,
+        body.reduce-motion-active *::after {
+            transition-duration: 0.01ms !important;
+            animation-duration: 0.01ms !important;
+        }
+        body.reduce-motion-active #transform-layer,
+        body.reduce-motion-active #transform-layer.smooth-snap,
+        body.reduce-motion-active #transform-layer.fast-tracking {
+            transition: none !important;
+        }
+    </style>
+</head>
+<body>
+    
+    <!-- Skip Navigation (WCAG 2.4.1) -->
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <!-- Hidden SVG Filter Engine -->
+    <svg style="position: absolute; width: 0; height: 0;" aria-hidden="true">
+        <filter id="theme-filter" color-interpolation-filters="sRGB">
+            <feColorMatrix id="color-matrix" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
+        </filter>
+    </svg>
+
+    <!-- Custom Color Builder Modal -->
+    <div id="custom-color-modal" class="modal-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="custom-color-title" aria-describedby="custom-color-desc">
+        <div class="modal-content">
+            <h2 id="custom-color-title">Custom Color Builder</h2>
+            <p id="custom-color-desc" style="font-size:0.95rem; opacity:0.8; margin:-5px 0 5px;">Adjust the sliders or pick a preset colour, then press Create Theme to add it to your list.</p>
+            
+            <div class="color-slider-group" role="group" aria-label="Text Color Adjustments">
+                <h3>Text Color</h3>
+                <div class="palette-grid" role="group" aria-label="Text Color Quick Presets" id="text-palette-grid"></div>
+                <label>Red: <input type="range" id="text-r" min="0" max="255" value="255" aria-label="Text Color Red"></label>
+                <label>Green: <input type="range" id="text-g" min="0" max="255" value="255" aria-label="Text Color Green"></label>
+                <label>Blue: <input type="range" id="text-b" min="0" max="255" value="255" aria-label="Text Color Blue"></label>
+            </div>
+            
+            <div class="color-slider-group" role="group" aria-label="Background Color Adjustments">
+                <h3>Background Color</h3>
+                <div class="palette-grid" role="group" aria-label="Background Color Quick Presets" id="bg-palette-grid"></div>
+                <label>Red: <input type="range" id="bg-r" min="0" max="255" value="0" aria-label="Background Color Red"></label>
+                <label>Green: <input type="range" id="bg-g" min="0" max="255" value="0" aria-label="Background Color Green"></label>
+                <label>Blue: <input type="range" id="bg-b" min="0" max="255" value="0" aria-label="Background Color Blue"></label>
+            </div>
+
+            <div id="custom-preview-box" aria-live="polite">Sample Text Preview</div>
+
+            <div class="modal-actions">
+                <button id="btn-close-custom" class="tool-btn">Cancel</button>
+                <button id="btn-apply-custom" class="primary-btn" style="margin-bottom:0;">Create Theme</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toolbar (nav landmark — WCAG 1.3.6) -->
+    <nav id="toolbar" aria-label="Magnifier controls">
+        <button class="tool-btn" id="btn-zoom-in" aria-label="Zoom In">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+            <span id="span-zoom-in" aria-hidden="true">Zoom In (+)</span>
+        </button>
+        <button class="tool-btn" id="btn-zoom-out" aria-label="Zoom Out" disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+            <span id="span-zoom-out" aria-hidden="true">Zoom Out (-)</span>
+        </button>
+        <button class="tool-btn" id="btn-freeze" aria-label="Freeze Frame" aria-pressed="false" disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+        </button>
+        
+        <div class="toolbar-divider"></div>
+        
+        <!-- Toolbar Theme Shortcuts -->
+        <div id="toolbar-themes" class="toolbar-themes-group" role="radiogroup" aria-label="Favorite Themes">
+            <!-- Injected by JS -->
+        </div>
+
+        <!-- Accessible Extended Themes Dropdown -->
+        <div class="dropdown" id="extended-themes-container">
+            <button class="tool-btn" id="btn-extended-themes" aria-haspopup="menu" aria-expanded="false" aria-label="Extended Themes Menu">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div class="dropdown-content" id="extended-themes-menu" role="menu" aria-label="Extended Color Themes">
+                <!-- Injected by JS -->
+            </div>
+        </div>
+        
+        <!-- Theme Dropdown (Visible as fallback when squished) -->
+        <div class="dropdown" id="theme-dropdown-container">
+            <button class="tool-btn" id="btn-theme-dropdown" aria-haspopup="menu" aria-expanded="false" aria-label="Theme Selection Menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0 0 20z"></path></svg>
+            </button>
+            <div class="dropdown-content" id="theme-dropdown-menu" role="menu" aria-label="Color Themes">
+                <!-- Injected by JS -->
+            </div>
+        </div>
+
+        <div class="toolbar-divider"></div>
+
+        <!-- Reading Tools Dropdown -->
+        <div class="dropdown" id="reading-tools-container">
+            <button class="tool-btn" id="btn-reading-tools" aria-haspopup="menu" aria-expanded="false" aria-label="Reading Tools Menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6" stroke-dasharray="2 2"></line><line x1="3" y1="18" x2="21" y2="18" stroke-dasharray="2 2"></line></svg>
+                <span id="span-reading" aria-hidden="true">Reading Tools</span>
+            </button>
+            <div class="dropdown-content" id="reading-tools-menu" role="menu" aria-label="Reading Tools">
+                <button class="tool-btn" id="btn-reading-none" role="menuitem">
+                    <span class="menu-indicator" id="ind-reading-none" aria-hidden="true">□</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    Tools Off
+                </button>
+                <button class="tool-btn" id="btn-reading-line" role="menuitem">
+                    <span class="menu-indicator" id="ind-reading-line" aria-hidden="true">□</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"></line></svg>
+                    Reading Line (,)
+                </button>
+                <button class="tool-btn" id="btn-reading-mask" role="menuitem">
+                    <span class="menu-indicator" id="ind-reading-mask" aria-hidden="true">□</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="8"></rect></svg>
+                    Reading Mask (.)
+                </button>
+                <div class="toolbar-divider" style="width:100%; height:2px; margin: 5px 0;"></div>
+                <!-- Mask window-size presets: icons show proportional gap size visually -->
+                <div style="display:flex; gap:6px; padding: 2px 0;" role="group" aria-label="Mask size presets">
+                    <button class="tool-btn" id="btn-mask-small" role="menuitem" aria-label="Mask: narrow window (1 line)" title="Narrow mask window (~1 line)" style="flex:1; justify-content:center; padding:8px;">
+                        <svg width="36" height="28" viewBox="0 0 36 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                            <rect x="0" y="0" width="36" height="11" fill="currentColor" opacity="0.55" rx="2"/>
+                            <rect x="0" y="13" width="36" height="2" fill="currentColor" opacity="1" rx="1"/>
+                            <rect x="0" y="17" width="36" height="11" fill="currentColor" opacity="0.55" rx="2"/>
+                        </svg>
+                    </button>
+                    <button class="tool-btn" id="btn-mask-medium" role="menuitem" aria-label="Mask: medium window (3 lines)" title="Medium mask window (~3 lines)" style="flex:1; justify-content:center; padding:8px;">
+                        <svg width="36" height="28" viewBox="0 0 36 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                            <rect x="0" y="0" width="36" height="8" fill="currentColor" opacity="0.55" rx="2"/>
+                            <rect x="0" y="10" width="36" height="8" fill="currentColor" opacity="1" rx="1"/>
+                            <rect x="0" y="20" width="36" height="8" fill="currentColor" opacity="0.55" rx="2"/>
+                        </svg>
+                    </button>
+                    <button class="tool-btn" id="btn-mask-large" role="menuitem" aria-label="Mask: wide window (5 lines)" title="Wide mask window (~5 lines)" style="flex:1; justify-content:center; padding:8px;">
+                        <svg width="36" height="28" viewBox="0 0 36 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                            <rect x="0" y="0" width="36" height="4" fill="currentColor" opacity="0.55" rx="2"/>
+                            <rect x="0" y="6" width="36" height="16" fill="currentColor" opacity="1" rx="1"/>
+                            <rect x="0" y="24" width="36" height="4" fill="currentColor" opacity="0.55" rx="2"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="toolbar-divider" style="width:100%; height:2px; margin: 5px 0;"></div>
+                <button class="tool-btn" id="btn-reading-auto" role="menuitem">
+                    <span class="menu-indicator" id="ind-reading-auto" aria-hidden="true">✓</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"></path></svg>
+                    <span id="text-reading-auto">Auto-Follow (/)</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="toolbar-divider"></div>
+
+        <!-- Overflow Menu for Leftover Options -->
+        <div class="dropdown" id="more-options-container">
+            <button class="tool-btn" id="btn-more-options" aria-haspopup="menu" aria-expanded="false" aria-label="More Options Menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+                <span id="span-more" aria-hidden="true">More Options</span>
+            </button>
+            <div class="dropdown-content" id="more-options-menu" role="menu" aria-label="More Options">
+                <button class="tool-btn" id="btn-toggle-hover-pan" role="menuitem" aria-label="Toggle Pointer Hover Panning">
+                    <span class="menu-indicator" id="ind-hover-pan" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9l6-6 6 6M11 3v11M5 15l6 6 6-6M11 21v-11"></path></svg>
+                    Hover Pan (P)
+                </button>
+                <button class="tool-btn" id="btn-mute" role="menuitem" aria-label="Toggle Audio Mute">
+                    <span class="menu-indicator" id="ind-mute" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                    <span id="text-mute">Mute Audio</span>
+                </button>
+                <button class="tool-btn" id="btn-flip-h" role="menuitem" aria-label="Flip Image Horizontally">
+                    <span class="menu-indicator" id="ind-flip-h" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 9 21 13 17 17"></polyline><polyline points="7 9 3 13 7 17"></polyline><line x1="12" y1="3" x2="12" y2="21"></line></svg>
+                    Flip Horizontal
+                </button>
+                <button class="tool-btn" id="btn-flip-v" role="menuitem" aria-label="Flip Image Vertically">
+                    <span class="menu-indicator" id="ind-flip-v" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 17 13 21 17 17"></polyline><polyline points="9 7 13 3 17 7"></polyline><line x1="3" y1="12" x2="21" y2="12"></line></svg>
+                    Flip Vertical
+                </button>
+                <div class="toolbar-divider" style="width:100%; height:2px; margin: 5px 0;"></div>
+                <button class="tool-btn" id="btn-contrast" role="menuitem" aria-label="Toggle Custom Contrast">
+                    <span class="menu-indicator" id="ind-contrast" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                    Contrast (C)
+                </button>
+                <button class="tool-btn" id="btn-invert" role="menuitem" aria-label="Invert Entire View">
+                    <span class="menu-indicator" id="ind-invert" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0 0 20z"></path></svg>
+                    Invert (I)
+                </button>
+                <button class="tool-btn" id="btn-toggle-cursor" role="menuitem" aria-label="Toggle Large Cursor">
+                    <span class="menu-indicator" id="ind-cursor" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="3,3 21,12 13,14 19,21 16,23 10,16 6,21"></polygon></svg>
+                    Large Cursor (X)
+                </button>
+                <button class="tool-btn" id="btn-toggle-reduce-motion" role="menuitem" aria-label="Toggle Reduce Motion">
+                    <span class="menu-indicator" id="ind-reduce-motion" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    Reduce Motion
+                </button>
+                <div class="toolbar-divider" style="width:100%; height:2px; margin: 5px 0;"></div>
+                <button class="tool-btn" id="btn-toggle-no-memory" role="menuitem" aria-label="Toggle preference memory">
+                    <span class="menu-indicator" id="ind-no-memory" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                    <span id="text-no-memory">Remember Preferences</span>
+                </button>
+                <button class="tool-btn" id="btn-reset-view" role="menuitem" aria-label="Reset Zoom and Pan">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+                    Reset Zoom/Pan (R)
+                </button>
+                <button class="tool-btn" id="btn-reset-all" role="menuitem" aria-label="Reset All Settings to Default">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2v6h6M21.5 22v-6h-6M22 11.5A10 10 0 0 0 3.2 7.2M2 12.5a10 10 0 0 0 18.8 4.2"></path></svg>
+                    Reset All Settings
+                </button>
+            </div>
+        </div>
+
+        <button class="tool-btn" id="btn-fullscreen" aria-label="Toggle Full Screen" style="margin-left: auto;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+            <span id="span-full" aria-hidden="true">Full Screen (M)</span>
+        </button>
+
+        <button class="tool-btn" id="btn-hide" aria-label="Hide Menu Bar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+            <span id="span-hide" aria-hidden="true">Hide Menu (H)</span>
+        </button>
+    </nav>
+
+    <!-- Status Indicator -->
+    <div id="status-display" class="status-badge" aria-live="assertive" aria-atomic="true" role="alert" style="opacity: 0;"></div>
+
+    <!-- Main content landmark (WCAG 1.3.6 / 2.4.1 skip target) -->
+    <main id="main-content">
+
+    <!-- Setup Screen (Scrollable, Native HTML Mode) -->
+    <div id="setup-screen-wrapper">
+        <div id="setup-screen">
+            <h1>VDO Magnifier</h1>
+            <label for="vdo-input" style="font-size: 1.2rem;">Paste the View Link:</label>
+            <input type="url" id="vdo-input" placeholder="https://vdo.ninja/?view=..."
+                   autocomplete="url" spellcheck="false" autocorrect="off" autocapitalize="none">
+            <button class="primary-btn" id="start-btn">Start Viewing</button>
+            
+            <h2 class="section-title">Favorite Color Themes (Drag to Reorder)</h2>
+            <div class="theme-container-flex" id="theme-container" role="radiogroup" aria-label="Primary Color Theme Options">
+                <!-- Themes 0-8 injected by JS -->
+            </div>
+
+            <div class="homescreen-actions-row">
+                <button id="btn-toggle-extended" class="btn-extended-toggle" aria-expanded="false" aria-controls="extended-theme-container" aria-label="Show more color options">
+                    More Color Options
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="chevron"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <button id="btn-custom-modal-home" class="btn-extended-toggle" aria-label="Create Custom Color Theme" style="border-style: dashed;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5"></circle><circle cx="17.5" cy="10.5" r=".5"></circle><circle cx="8.5" cy="7.5" r=".5"></circle><circle cx="6.5" cy="12.5" r=".5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>
+                    <span aria-hidden="true">Custom Colors (Shift+9)</span>
+                </button>
+            </div>
+
+            <div class="theme-container-flex" id="extended-theme-container" role="radiogroup" aria-label="Extended Color Theme Options" style="display: none;">
+                <!-- Themes 9+ injected by JS -->
+            </div>
+
+            <h2 class="section-title">Keyboard Shortcuts</h2>
+            
+            <h3 class="shortcut-category">Navigation & Zoom</h3>
+            <div class="hotkey-container-flex" role="region" aria-label="Navigation Shortcuts">
+                <div class="hotkey-card"><span>Zoom In</span><kbd>+</kbd></div>
+                <div class="hotkey-card"><span>Zoom Out</span><kbd>-</kbd></div>
+                <div class="hotkey-card"><span>Pan View</span><kbd>Arrows/WASD</kbd></div>
+                <div class="hotkey-card"><span>Hover Pan</span><kbd>P</kbd></div>
+                <div class="hotkey-card"><span>Reset Zoom/Pan</span><kbd>R</kbd></div>
+            </div>
+
+            <h3 class="shortcut-category">Colors & Themes</h3>
+            <div class="hotkey-container-flex" role="region" aria-label="Theme Shortcuts">
+                <div class="hotkey-card"><span>Set Theme</span><kbd>0-8</kbd></div>
+                <div class="hotkey-card"><span>Extended Menu</span><kbd>9</kbd></div>
+                <div class="hotkey-card"><span>Custom Theme</span><kbd>Shift+9</kbd></div>
+                <div class="hotkey-card"><span>Cycle Theme</span><kbd>T / Shift+T</kbd></div>
+                <div class="hotkey-card"><span>Contrast Boost</span><kbd>C</kbd></div>
+                <div class="hotkey-card"><span>Invert Colors</span><kbd>I</kbd></div>
+            </div>
+
+            <h3 class="shortcut-category">Reading Tools</h3>
+            <div class="hotkey-container-flex" role="region" aria-label="Reading Tool Shortcuts">
+                <div class="hotkey-card"><span>Toggle Line</span><kbd>,</kbd></div>
+                <div class="hotkey-card"><span>Toggle Mask</span><kbd>.</kbd></div>
+                <div class="hotkey-card"><span>Auto-Follow</span><kbd>/</kbd></div>
+            </div>
+
+            <h3 class="shortcut-category">Utilities</h3>
+            <div class="hotkey-container-flex" role="region" aria-label="Utility Shortcuts">
+                <div class="hotkey-card"><span>Large Cursor</span><kbd>X</kbd></div>
+                <div class="hotkey-card"><span>Freeze Frame</span><kbd>F</kbd></div>
+                <div class="hotkey-card"><span>Full Screen</span><kbd>M</kbd></div>
+                <div class="hotkey-card"><span>Hide Menu</span><kbd>H</kbd></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workspace Area (Only visible when viewing video) -->
+    <div id="workspace">
+        <div id="transform-layer">
+            <!--
+                sandbox notes: allow-same-origin is required for VDO.ninja's WebRTC APIs to function.
+                For cross-origin URLs (the normal use case) this provides no sandbox escape risk.
+                If this tool is ever served from the same origin as the embedded URL, the sandbox
+                would offer no script isolation — the URL input should be validated server-side in that scenario.
+            -->
+            <iframe id="vdo-frame" src="about:blank" allow="autoplay; fullscreen" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" title="VDO Ninja Video Feed" tabindex="-1"></iframe>
+        </div>
+        
+        <!-- Overlays for Reading Support -->
+        <div id="reading-line" class="reading-guide" style="display:none;" aria-hidden="true"></div>
+        <div id="reading-mask-top" class="reading-mask" style="display:none;" aria-hidden="true">
+           <div class="mask-handle-top" role="separator" aria-label="Drag to adjust top of reading window"></div>
+        </div>
+        <div id="reading-mask-bottom" class="reading-mask" style="display:none;" aria-hidden="true">
+           <div class="mask-handle-bottom" role="separator" aria-label="Drag to adjust bottom of reading window"></div>
+        </div>
+        <div id="reading-mask-gap" class="mask-gap-hitbox" style="display:none;" aria-hidden="true" aria-label="Drag to move reading window"></div>
+
+        <!-- Dedicated Hint Container -->
+        <div id="reading-hint" aria-hidden="true">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span>Tip: Press <b>/</b> to pause Auto-Follow & adjust mask height by pulling its edges</span>
+                <button id="btn-close-hint" aria-label="Dismiss Tip" style="background:none; border:none; color:inherit; cursor:pointer; font-size:1.5rem; font-weight:bold; padding:0 5px;" tabindex="-1">&times;</button>
+            </div>
+        </div>
+    </div><!-- /#workspace -->
+
+    </main><!-- /#main-content -->
+
+    <script>
+        // --- Global Constants ---
+        const CONSTANTS = {
+            MAX_SCALE: 40,
+            PINCH_SENSITIVITY: 0.045,
+            STATUS_TIMEOUT_MS: 3500,
+            DEBOUNCE_MS: 100,
+            SAVE_DEBOUNCE_MS: 500,
+            // Themed filter contrast levels
+            CONTRAST_NORMAL: '300%',
+            CONTRAST_HIGH: '500%',
+            // Natural/Grayscale mode contrast levels
+            CONTRAST_NAT_HIGH: '175%',
+            CONTRAST_NAT_SATURATION: '150%',
+            CONTRAST_GRAY_HIGH: '200%',
+        };
+
+        // --- Indicator Helper ---
+        // Sets a menu item's □/✓ indicator. id = the span's id, on = boolean.
+        function setIndicator(id, on) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = on ? '✓' : '□';
+        }
+        // Syncs every indicator to current state — called on load and after any toggle.
+        function syncAllIndicators() {
+            const mode = state.readingMode;
+            setIndicator('ind-reading-none', mode === 'none');
+            setIndicator('ind-reading-line', mode === 'line');
+            setIndicator('ind-reading-mask', mode === 'mask');
+            setIndicator('ind-reading-auto', state.readingAutoFollow);
+            setIndicator('ind-hover-pan',    state.hoverPan);
+            setIndicator('ind-mute',         state.isMuted);
+            setIndicator('ind-flip-h',       state.flipH);
+            setIndicator('ind-flip-v',       state.flipV);
+            setIndicator('ind-contrast',     state.isManualHighContrast);
+            setIndicator('ind-invert',       state.isManualInverted);
+            setIndicator('ind-cursor',       state.isLargeCursorActive);
+            setIndicator('ind-reduce-motion', state.reduceMotion);
+            setIndicator('ind-no-memory',    state.noMemory);
+        }
+
+
+        const defaultThemes = [
+            { id: 'nat', name: 'Natural Colors', bg: '#000000', text: '#ffffff', panel: '#1a1a1a', isNat: true },
+            { id: 'wb', name: 'White on Black', bg: '#000000', text: '#ffffff', panel: '#1a1a1a' },
+            { id: 'bw', name: 'Black on White', bg: '#ffffff', text: '#000000', panel: '#e0e0e0' },
+            { id: 'yb', name: 'Yellow on Black', bg: '#000000', text: '#ffff00', panel: '#1a1a1a' },
+            { id: 'by', name: 'Black on Yellow', bg: '#ffff00', text: '#000000', panel: '#e6e600' },
+            { id: 'gb', name: 'Green on Black', bg: '#000000', text: '#00ff00', panel: '#1a1a1a' },
+            { id: 'cb', name: 'Cyan on Black', bg: '#000000', text: '#00ffff', panel: '#1a1a1a' },
+            { id: 'ybl', name: 'Yellow on Blue', bg: '#0000aa', text: '#ffff00', panel: '#000088' },
+            { id: 'wbl', name: 'White on Blue', bg: '#0000aa', text: '#ffffff', panel: '#000088' },
+            { id: 'ab', name: 'Amber on Black', bg: '#000000', text: '#ffbf00', panel: '#1a1a1a' },
+            { id: 'sd', name: 'Soft Dark Mode', bg: '#1a1a1a', text: '#e0e0e0', panel: '#2a2a2a' },
+            { id: 'rb', name: 'Red on Black', bg: '#000000', text: '#ff0000', panel: '#1a1a1a' },
+            { id: 'bp', name: 'Black on Peach', bg: '#ffdab9', text: '#000000', panel: '#e6c4a3' },
+            { id: 'bm', name: 'Black on Mint', bg: '#98ff98', text: '#000000', panel: '#85e685' },
+            { id: 'bl', name: 'Black on Lt Blue', bg: '#add8e6', text: '#000000', panel: '#9ac2cf' },
+            { id: 'nc', name: 'Dark Navy on Cream', bg: '#fdf6e3', text: '#000080', panel: '#eee8d5' },
+            { id: 'br', name: 'Black on Rose', bg: '#ffe4e1', text: '#000000', panel: '#ffb6c1' },
+            { id: 'gray', name: 'Pure Grayscale', bg: '#000000', text: '#ffffff', panel: '#1a1a1a', isGray: true }
+        ];
+
+        let themes = [];
+        let state = {
+            streamScale: 1, panX: 0, panY: 0,
+            homeScale: 1,
+            isManualHighContrast: false, isManualInverted: false,
+            isMenuHidden: false, isFrozen: false, isLargeCursorActive: false,
+            flipH: false, flipV: false, isMuted: false,
+            hoverPan: false, noMemory: false, reduceMotion: false,
+            readingMode: 'none', readingAutoFollow: true, readingY: window.innerHeight / 2,
+            readingGap: 150, hideReadingHint: false,
+            activeThemeId: defaultThemes[0].id,
+            lastSessionUrl: ''
+        };
+
+        let readingDragTarget = null; 
+        let windowHasStartedOnce = false;
+        let storageFailed = false;
+        let customZoomStep = null; 
+        let vdoOrigin = '*';
+
+        // Load Memory Safely
+        try {
+            const savedThemes = localStorage.getItem('vdoMagnifierThemes');
+            themes = savedThemes ? JSON.parse(savedThemes) : [...defaultThemes];
+
+            const savedPrefs = localStorage.getItem('vdoMagnifierPrefs');
+            if (savedPrefs) Object.assign(state, JSON.parse(savedPrefs));
+        } catch (e) {
+            themes = [...defaultThemes];
+            storageFailed = true;
+        }
+
+        // Debounced Save Memory — skipped when noMemory is active or storage has failed
+        let saveTimeout;
+        function savePrefs() {
+            if (storageFailed || state.noMemory) return;
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                try {
+                    localStorage.setItem('vdoMagnifierPrefs', JSON.stringify(state));
+                    localStorage.setItem('vdoMagnifierThemes', JSON.stringify(themes));
+                } catch(e) {
+                    storageFailed = true; // Lockout to prevent spamming errors in Private Browsing
+                }
+            }, CONSTANTS.SAVE_DEBOUNCE_MS);
+        }
+
+        // DOM Containers
+        const themeContainer = document.getElementById('theme-container');
+        const extendedThemeContainer = document.getElementById('extended-theme-container');
+        const toolbarThemes = document.getElementById('toolbar-themes');
+        const themeDropdownMenu = document.getElementById('theme-dropdown-menu');
+        const extendedThemesMenu = document.getElementById('extended-themes-menu');
+        const customModal = document.getElementById('custom-color-modal');
+        const customPreviewBox = document.getElementById('custom-preview-box');
+
+        const setupScreen = document.getElementById('setup-screen');
+        const vdoInput = document.getElementById('vdo-input');
+        const startBtn = document.getElementById('start-btn');
+        const vdoFrame = document.getElementById('vdo-frame');
+        const transformLayer = document.getElementById('transform-layer');
+        const workspace = document.getElementById('workspace');
+        const statusDisplay = document.getElementById('status-display');
+        const toolbar = document.getElementById('toolbar');
+        const zoomOutBtn = document.getElementById('btn-zoom-out');
+        const freezeBtn = document.getElementById('btn-freeze');
+        const readingLine = document.getElementById('reading-line');
+        const maskTop = document.getElementById('reading-mask-top');
+        const maskBottom = document.getElementById('reading-mask-bottom');
+        const maskGapHitbox = document.getElementById('reading-mask-gap');
+        const readingHint = document.getElementById('reading-hint');
+
+        // --- Toolbar Resizing Logic ---
+        function adjustToolbar() {
+            if (!toolbar) return;
+            const spans = [
+                document.getElementById('span-hide'),
+                document.getElementById('span-full'),
+                document.getElementById('span-more'),
+                document.getElementById('span-reading'),
+                document.getElementById('span-zoom-out'),
+                document.getElementById('span-zoom-in')
+            ];
+
+            const themeBar = document.getElementById('toolbar-themes');
+            const themeExt = document.getElementById('extended-themes-container');
+            const themeDrop = document.getElementById('theme-dropdown-container');
+
+            spans.forEach(span => { if (span) span.style.display = ''; });
+            themeBar.style.display = 'flex';
+            themeExt.style.display = 'inline-block';
+            themeDrop.style.display = 'none';
+
+            const isOverflowing = () => toolbar.scrollWidth > toolbar.clientWidth;
+
+            if (isOverflowing()) {
+                for (let i = 0; i < spans.length; i++) {
+                    if (spans[i]) spans[i].style.display = 'none';
+                    if (!isOverflowing()) break;
+                }
+            }
+
+            if (isOverflowing()) {
+                themeBar.style.display = 'none';
+                themeExt.style.display = 'none';
+                themeDrop.style.display = 'inline-block';
+            }
+        }
+        
+        // ResizeObserver fires whenever the toolbar itself changes width — catches dynamic
+        // content changes (theme injection, font load) that window.resize would miss.
+        // Falls back to window.resize if ResizeObserver isn't available (very old browsers).
+        if (typeof ResizeObserver !== 'undefined') {
+            let roDebounce;
+            const toolbarObserver = new ResizeObserver(() => {
+                clearTimeout(roDebounce);
+                roDebounce = setTimeout(adjustToolbar, CONSTANTS.DEBOUNCE_MS);
+            });
+            toolbarObserver.observe(toolbar);
+        } else {
+            let resizeTimeout;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(adjustToolbar, CONSTANTS.DEBOUNCE_MS);
+            });
+        }
+
+        // --- UI Rendering ---
+        let previewTimeout;
+        function bindPreviewEvents(btn, themeId) {
+            btn.addEventListener('mouseenter', () => {
+                clearTimeout(previewTimeout);
+                previewTimeout = setTimeout(() => applyTheme(themeId, true), 100);
+            });
+            btn.addEventListener('mouseleave', () => {
+                clearTimeout(previewTimeout);
+                previewTimeout = setTimeout(() => applyTheme(state.activeThemeId, true), 100);
+            });
+            btn.addEventListener('focus', () => {
+                clearTimeout(previewTimeout);
+                applyTheme(themeId, true);
+            });
+            btn.addEventListener('blur', () => {
+                clearTimeout(previewTimeout);
+                applyTheme(state.activeThemeId, true);
+            });
+        }
+
+        function handleDragStart(e, themeId) {
+            e.dataTransfer.setData('text/plain', themeId);
+            e.dataTransfer.effectAllowed = 'move';
+            e.target.style.opacity = '0.5';
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            e.currentTarget.classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('drag-over');
+        }
+
+        function handleDrop(e, dropId) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drag-over');
+            const dragId = e.dataTransfer.getData('text/plain');
+            if (dragId === dropId || !dragId) return;
+            // Natural Colors is always pinned to position 0 — block dragging it or onto it
+            if (dragId === 'nat' || dropId === 'nat') return;
+
+            const dragIndex = themes.findIndex(t => t.id === dragId);
+            const dropIndex = themes.findIndex(t => t.id === dropId);
+            if (dragIndex === -1 || dropIndex === -1) return;
+
+            const movedItem = themes.splice(dragIndex, 1)[0];
+            themes.splice(dropIndex, 0, movedItem);
+
+            savePrefs();
+            renderAllThemes();
+            showStatus("Theme Order Saved");
+        }
+
+        function handleKeyboardReorder(e, themeId) {
+            // Natural Colors is pinned to position 0 — never reorderable
+            if (themeId === 'nat') return;
+            const index = themes.findIndex(t => t.id === themeId);
+            if (index === -1) return;
+
+            let newIndex = index;
+            if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowDown')) {
+                e.preventDefault(); e.stopPropagation();
+                if (index < themes.length - 1) {
+                    const temp = themes[index];
+                    themes[index] = themes[index + 1];
+                    themes[index + 1] = temp;
+                    newIndex = index + 1;
+                }
+            } else if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowUp')) {
+                e.preventDefault(); e.stopPropagation();
+                // Don't allow moving into position 0 (nat's reserved slot)
+                if (index > 1) {
+                    const temp = themes[index];
+                    themes[index] = themes[index - 1];
+                    themes[index - 1] = temp;
+                    newIndex = index - 1;
+                }
+            } else {
+                return;
+            }
+            
+            if (newIndex !== index) {
+                savePrefs();
+                renderAllThemes();
+                requestAnimationFrame(() => {
+                    const btn = document.getElementById(`theme-btn-${themes[newIndex].id}`);
+                    if (btn) btn.focus();
+                });
+                showStatus(newIndex > index ? "Moved Theme Right" : "Moved Theme Left");
+            }
+        }
+
+        document.getElementById('btn-toggle-extended').addEventListener('click', (e) => {
+            const container = document.getElementById('extended-theme-container');
+            const isExpanded = container.style.display === 'flex';
+            container.style.display = isExpanded ? 'none' : 'flex';
+            e.currentTarget.setAttribute('aria-expanded', !isExpanded);
+            e.currentTarget.setAttribute('aria-label', isExpanded ? 'Show more color options' : 'Hide more color options');
+            
+            const chevron = e.currentTarget.querySelector('svg polyline');
+            if (!isExpanded) chevron.setAttribute('points', '18 15 12 9 6 15');
+            else chevron.setAttribute('points', '6 9 12 15 18 9');
+        });
+
+        function updateActiveThemeUI() {
+            document.querySelectorAll('[data-theme-id]').forEach(btn => {
+                const id = btn.getAttribute('data-theme-id');
+                const isSelected = (id === state.activeThemeId);
+                
+                if (btn.hasAttribute('aria-checked')) {
+                    btn.setAttribute('aria-checked', isSelected.toString());
+                } else if (btn.hasAttribute('aria-pressed')) {
+                    btn.setAttribute('aria-pressed', isSelected.toString());
+                }
+                
+                if (btn.classList.contains('toolbar-theme-btn') || btn.classList.contains('theme-swatch')) {
+                    btn.style.outline = isSelected ? '3px solid var(--text-color)' : 'none';
+                    btn.style.outlineOffset = isSelected ? '2px' : '';
+                }
+            });
+        }
+
+        function createDropdownThemeBtn(t, index, displayName) {
+            const btn = document.createElement('button');
+            btn.className = 'tool-btn dropdown-theme-btn';
+            btn.draggable = true;
+            if (t.isNat) btn.classList.add('btn-natural');
+            btn.role = 'menuitemradio';
+            btn.innerText = displayName;
+            btn.style.backgroundColor = t.bg;
+            btn.style.color = t.text;
+            btn.style.borderColor = t.text;
+            btn.setAttribute('data-theme-id', t.id);
+            btn.setAttribute('aria-checked', (t.id === state.activeThemeId).toString());
+            
+            btn.onclick = (e) => {
+                closeAllDropdowns();
+                applyTheme(t.id, false);
+                e.stopPropagation();
+            };
+            btn.ondragstart = (e) => handleDragStart(e, t.id);
+            btn.ondragover = handleDragOver;
+            btn.ondragleave = handleDragLeave;
+            btn.ondrop = (e) => handleDrop(e, t.id);
+            btn.ondragend = (e) => e.target.style.opacity = '1';
+            bindPreviewEvents(btn, t.id);
+            return btn;
+        }
+
+        function renderAllThemes() {
+            // Always ensure Natural Colors is at position 0, regardless of save state
+            const natIdx = themes.findIndex(t => t.id === 'nat');
+            if (natIdx > 0) {
+                const [nat] = themes.splice(natIdx, 1);
+                themes.unshift(nat);
+            }
+
+            themeContainer.innerHTML = '';
+            extendedThemeContainer.innerHTML = '';
+            toolbarThemes.innerHTML = '';
+            themeDropdownMenu.innerHTML = '';
+            extendedThemesMenu.innerHTML = '';
+
+            const createCustomBtnHtml = `
+                <button class="tool-btn" id="btn-custom-modal-dropdown" aria-label="Create Custom Color Theme" role="menuitem" style="border-style: dashed;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5"></circle><circle cx="17.5" cy="10.5" r=".5"></circle><circle cx="8.5" cy="7.5" r=".5"></circle><circle cx="6.5" cy="12.5" r=".5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>
+                    <span aria-hidden="true">Create Custom Theme (Shift+9)</span>
+                </button>
+                <div class="toolbar-divider" style="width:100%; height:2px; margin: 5px 0;"></div>
+            `;
+            extendedThemesMenu.insertAdjacentHTML('beforeend', createCustomBtnHtml);
+            document.getElementById('btn-custom-modal-dropdown').addEventListener('click', (e) => openCustomModal(e));
+
+            themes.forEach((t, index) => {
+                const isFavorite = index <= 8;
+                const displayName = isFavorite ? `${index}: ${t.name}` : t.name;
+
+                const btnHome = document.createElement('button');
+                btnHome.id = `theme-btn-${t.id}`;
+                btnHome.className = 'theme-swatch';
+                // Natural Colors is pinned to position 0 — not draggable
+                const isNatPinned = t.id === 'nat';
+                btnHome.draggable = !isNatPinned;
+                if (t.isNat) btnHome.classList.add('btn-natural');
+                btnHome.role = 'radio';
+                btnHome.innerText = displayName;
+                btnHome.setAttribute('aria-label', `Theme ${index}: ${t.name}`);
+                btnHome.setAttribute('aria-roledescription', isNatPinned ? 'pinned theme button' : 'sortable theme button');
+                btnHome.setAttribute('aria-checked', (t.id === state.activeThemeId).toString());
+                btnHome.setAttribute('data-theme-id', t.id);
+                btnHome.title = isNatPinned
+                    ? `${t.name} (Pinned to position 0)`
+                    : `${t.name} (Drag to reorder or use Shift + Arrow Keys)`;
+                btnHome.style.backgroundColor = t.bg;
+                btnHome.style.color = t.text;
+                btnHome.style.borderColor = t.text;
+                
+                btnHome.onclick = () => applyTheme(t.id, false);
+                if (!isNatPinned) {
+                    btnHome.ondragstart = (e) => handleDragStart(e, t.id);
+                    btnHome.ondragover = handleDragOver;
+                    btnHome.ondragleave = handleDragLeave;
+                    btnHome.ondrop = (e) => handleDrop(e, t.id);
+                    btnHome.ondragend = (e) => e.target.style.opacity = '1';
+                    btnHome.onkeydown = (e) => handleKeyboardReorder(e, t.id);
+                }
+                bindPreviewEvents(btnHome, t.id);
+                
+                if (isFavorite) themeContainer.appendChild(btnHome);
+                else extendedThemeContainer.appendChild(btnHome);
+
+                if (isFavorite) {
+                    const btnToolbar = document.createElement('button');
+                    btnToolbar.className = 'toolbar-theme-btn';
+                    btnToolbar.draggable = !isNatPinned;
+                    if (t.isNat) btnToolbar.classList.add('btn-natural');
+                    btnToolbar.role = 'radio';
+                    btnToolbar.innerText = index;
+                    btnToolbar.setAttribute('aria-label', `Theme ${index}: ${t.name}`);
+                    btnToolbar.setAttribute('aria-checked', (t.id === state.activeThemeId).toString());
+                    btnToolbar.setAttribute('aria-roledescription', isNatPinned ? 'pinned theme button' : 'sortable theme button');
+                    btnToolbar.setAttribute('data-theme-id', t.id);
+                    btnToolbar.title = isNatPinned ? `${t.name} (Pinned to position 0)` : `${t.name} (Drag to reorder)`;
+                    btnToolbar.style.backgroundColor = t.bg;
+                    btnToolbar.style.color = t.text;
+                    btnToolbar.style.borderColor = t.text;
+                    
+                    btnToolbar.onclick = () => applyTheme(t.id, false);
+                    if (!isNatPinned) {
+                        btnToolbar.ondragstart = (e) => handleDragStart(e, t.id);
+                        btnToolbar.ondragover = handleDragOver;
+                        btnToolbar.ondragleave = handleDragLeave;
+                        btnToolbar.ondrop = (e) => handleDrop(e, t.id);
+                        btnToolbar.ondragend = (e) => e.target.style.opacity = '1';
+                    }
+                    bindPreviewEvents(btnToolbar, t.id);
+                    toolbarThemes.appendChild(btnToolbar);
+                }
+
+                themeDropdownMenu.appendChild(createDropdownThemeBtn(t, index, displayName));
+                if (!isFavorite) {
+                    extendedThemesMenu.appendChild(createDropdownThemeBtn(t, index, displayName));
+                }
+            });
+
+            updateActiveThemeUI();
+            adjustToolbar();
+        }
+
+        document.getElementById('btn-custom-modal-home').addEventListener('click', (e) => openCustomModal(e));
+
+        // --- Custom SVG Color Matrix Logic ---
+        function hexToRgbInt(hex) {
+            let shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+            hex = hex.replace(shorthandRegex, function(m, r, g, b) { return r + r + g + g + b + b; });
+            let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)] : [0, 0, 0];
+        }
+
+        function hexToRgb(hex) {
+            const rgb = hexToRgbInt(hex);
+            return [rgb[0]/255, rgb[1]/255, rgb[2]/255];
+        }
+        
+        function rgbToHex(r, g, b) {
+            return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
+        }
+
+        function isSafeHex(val) {
+            return /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(val);
+        }
+
+        function updateSvgFilter(bgHex, textHex, isNatural, isGrayscale) {
+            if (isNatural || isGrayscale) return; 
+
+            const [r_bg, g_bg, b_bg] = hexToRgb(bgHex);
+            const [r_txt, g_txt, b_txt] = hexToRgb(textHex);
+
+            const matrix = `
+                ${(r_bg - r_txt) * 0.2126} ${(r_bg - r_txt) * 0.7152} ${(r_bg - r_txt) * 0.0722} 0 ${r_txt}
+                ${(g_bg - g_txt) * 0.2126} ${(g_bg - g_txt) * 0.7152} ${(g_bg - g_txt) * 0.0722} 0 ${g_txt}
+                ${(b_bg - b_txt) * 0.2126} ${(b_bg - b_txt) * 0.7152} ${(b_bg - b_txt) * 0.0722} 0 ${b_txt}
+                0 0 0 1 0
+            `;
+            document.getElementById('color-matrix').setAttribute('values', matrix);
+        }
+
+        function renderColors(previewThemeId = null) {
+            const targetId = previewThemeId || state.activeThemeId;
+            const t = themes.find(x => x.id === targetId) || themes[0];
+            const root = document.documentElement;
+            
+            let activeBg = t.bg;
+            let activeText = t.text;
+            let activePanel = t.panel;
+
+            if (state.isManualInverted) {
+                if (t.isNat || t.isGray) {
+                    activeBg = '#ffffff';
+                    activeText = '#000000';
+                    activePanel = '#e0e0e0';
+                } else {
+                    activeBg = t.text;
+                    activeText = t.bg;
+                    activePanel = t.text; 
+                }
+            }
+
+            root.style.setProperty('--bg-color', activeBg);
+            root.style.setProperty('--text-color', activeText);
+            root.style.setProperty('--panel-bg', activePanel);
+            root.style.setProperty('--border-color', activeText);
+            root.style.setProperty('--button-bg', activePanel);
+            root.style.setProperty('--button-hover', activeText);
+            root.style.setProperty('--button-hover-text', activeBg);
+            
+            updateSvgFilter(activeBg, activeText, t.isNat, t.isGray);
+        }
+
+        function applyTheme(themeId, isPreview = false) {
+            const t = themes.find(x => x.id === themeId);
+            if (!t) return;
+
+            if (!isPreview) {
+                state.activeThemeId = themeId;
+                savePrefs();
+                updateActiveThemeUI();
+                renderColors();
+                updateVisuals(); 
+                showStatus(t.name);
+            } else {
+                renderColors(themeId);
+                updateVisuals(themeId);
+            }
+        }
+
+        // --- Custom Dropdown Accessibility & Logic ---
+        function closeAllDropdowns(restoreFocus = false) {
+            document.querySelectorAll('.dropdown-content.show').forEach(menu => {
+                menu.classList.remove('show');
+                const trigger = menu.previousElementSibling;
+                trigger.setAttribute('aria-expanded', 'false');
+                // Return focus to the trigger button when called via Escape or programmatically
+                if (restoreFocus && trigger && typeof trigger.focus === 'function') {
+                    trigger.focus();
+                }
+            });
+        }
+
+        function setupAccessibleDropdown(btnId, menuId) {
+            const btn = document.getElementById(btnId);
+            const menu = document.getElementById(menuId);
+
+            btn.addEventListener('click', (e) => {
+                const isExpanded = btn.getAttribute('aria-expanded') === 'true';
+                closeAllDropdowns(); 
+
+                if (!isExpanded) {
+                    menu.classList.add('show');
+                    btn.setAttribute('aria-expanded', 'true');
+                    const firstItem = menu.querySelector('[role="menuitem"], [role="menuitemradio"]');
+                    if (firstItem) firstItem.focus();
+                }
+                e.stopPropagation();
+            });
+
+            menu.addEventListener('keydown', (e) => {
+                const items = Array.from(menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"]'));
+                const currentIndex = items.indexOf(document.activeElement);
+
+                switch(e.key) {
+                    case 'ArrowDown':
+                    case 'ArrowRight': {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const next = (currentIndex + 1) % items.length;
+                        items[next].focus();
+                        break;
+                    }
+                    case 'ArrowUp':
+                    case 'ArrowLeft': {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const prev = (currentIndex - 1 + items.length) % items.length;
+                        items[prev].focus();
+                        break;
+                    }
+                    case 'Home': {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        items[0].focus();
+                        break;
+                    }
+                    case 'End': {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        items[items.length - 1].focus();
+                        break;
+                    }
+                    case 'Escape': {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        closeAllDropdowns(true);
+                        break;
+                    }
+                    default: {
+                        // Letter-key navigation: jump to first item starting with that letter
+                        if (e.key.length === 1 && e.key.match(/[a-zA-Z]/)) {
+                            e.stopPropagation(); // prevent global shortcut handler
+                            const letter = e.key.toLowerCase();
+                            const match = items.find((item, i) =>
+                                i > currentIndex && item.textContent.trim().toLowerCase().startsWith(letter)
+                            ) || items.find(item =>
+                                item.textContent.trim().toLowerCase().startsWith(letter)
+                            );
+                            if (match) match.focus();
+                        }
+                        break;
+                    }
+                }
+            });
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.dropdown') && !e.target.closest('.modal-content')) {
+                closeAllDropdowns();
+            }
+        });
+
+        // --- Custom Color Builder Logic ---
+        const presetColors = [
+            '#ffffff', '#000000', '#808080', '#1a1a1a', '#ff0000', '#00ff00', 
+            '#0000ff', '#ffff00', '#00ffff', '#ff00ff', '#ffbf00', '#000080', 
+            '#fdf6e3', '#ffe4e1', '#ffdab9', '#98ff98', '#add8e6', '#800080'
+        ];
+        
+        function populatePalette(containerId, isText) {
+            const container = document.getElementById(containerId);
+            presetColors.forEach(hex => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'palette-btn';
+                btn.style.background = hex;
+                btn.setAttribute('data-hex', hex);
+                btn.setAttribute('aria-label', `Select Hex ${hex}`);
+                
+                btn.addEventListener('click', () => {
+                    const rgb = hexToRgbInt(hex);
+                    const prefix = isText ? 'text' : 'bg';
+                    document.getElementById(`${prefix}-r`).value = rgb[0];
+                    document.getElementById(`${prefix}-g`).value = rgb[1];
+                    document.getElementById(`${prefix}-b`).value = rgb[2];
+                    refreshCustomPreview();
+                });
+                container.appendChild(btn);
+            });
+        }
+
+        const textInputs = ['text-r', 'text-g', 'text-b'].map(id => document.getElementById(id));
+        const bgInputs = ['bg-r', 'bg-g', 'bg-b'].map(id => document.getElementById(id));
+
+        function refreshCustomPreview() {
+            const textHex = rgbToHex(textInputs[0].value, textInputs[1].value, textInputs[2].value);
+            const bgHex = rgbToHex(bgInputs[0].value, bgInputs[1].value, bgInputs[2].value);
+            
+            customPreviewBox.style.color = textHex;
+            customPreviewBox.style.backgroundColor = bgHex;
+            customPreviewBox.style.borderColor = textHex;
+        }
+
+        [...textInputs, ...bgInputs].forEach(input => input.addEventListener('input', refreshCustomPreview));
+
+        let lastFocusedElement = null;
+
+        function openCustomModal(e) {
+            // Store the triggering element so focus can be restored on close
+            lastFocusedElement = (e && e.currentTarget) ? e.currentTarget : document.activeElement;
+            closeAllDropdowns();
+            customModal.style.display = 'flex';
+            customModal.removeAttribute('aria-hidden');
+            refreshCustomPreview();
+            document.getElementById('text-r').focus();
+        }
+
+        function closeCustomModal() {
+            customModal.style.display = 'none';
+            customModal.setAttribute('aria-hidden', 'true');
+            if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+                lastFocusedElement.focus();
+                lastFocusedElement = null;
+            }
+        }
+
+        // Trap focus inside modal
+        customModal.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab') {
+                const focusable = customModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                if (focusable.length === 0) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
+        });
+
+        document.getElementById('btn-close-custom').addEventListener('click', closeCustomModal);
+        
+        document.getElementById('btn-apply-custom').addEventListener('click', () => {
+            const textHex = rgbToHex(textInputs[0].value, textInputs[1].value, textInputs[2].value);
+            const bgHex = rgbToHex(bgInputs[0].value, bgInputs[1].value, bgInputs[2].value);
+            
+            const newId = 'custom-' + Date.now();
+            const newTheme = {
+                id: newId, name: 'Custom Theme',
+                bg: bgHex, text: textHex, panel: bgHex 
+            };
+            
+            themes.splice(9, 0, newTheme); 
+            savePrefs();
+            renderAllThemes();
+            closeCustomModal();
+            applyTheme(newId, false);
+            showStatus("Custom Theme Created");
+        });
+
+        // --- Initialization ---
+        window.addEventListener('DOMContentLoaded', () => {
+            if (state.isMenuHidden) toolbar.style.display = 'none';
+            // Apply reduce motion: use saved preference, or fall back to OS setting
+            if (state.reduceMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                state.reduceMotion = true;
+                document.body.classList.add('reduce-motion-active');
+            }
+            // Sync no-memory button visual state from loaded preferences
+            if (state.noMemory) {
+                const btn = document.getElementById('btn-toggle-no-memory');
+                if (btn) btn.classList.add('active-state');
+            }
+
+            renderAllThemes();
+            syncAllIndicators();
+            populatePalette('text-palette-grid', true);
+            populatePalette('bg-palette-grid', false);
+            
+            setupAccessibleDropdown('btn-theme-dropdown', 'theme-dropdown-menu');
+            setupAccessibleDropdown('btn-extended-themes', 'extended-themes-menu');
+            setupAccessibleDropdown('btn-reading-tools', 'reading-tools-menu');
+            setupAccessibleDropdown('btn-more-options', 'more-options-menu');
+            
+            document.getElementById('btn-close-hint').addEventListener('click', () => {
+                state.hideReadingHint = true;
+                savePrefs();
+                updateReadingTools();
+            });
+
+            const urlParams = new URLSearchParams(window.location.search);
+
+            // --- UI Scale from ?ui= param ---
+            // Default is 1.2 (set in CSS). ?ui=1.0 restores original size, ?ui=1.5 goes larger.
+            const uiParam = parseFloat(urlParams.get('ui'));
+            if (!isNaN(uiParam) && uiParam > 0) {
+                document.documentElement.style.setProperty('--ui-scale', String(uiParam));
+            }
+            
+            if (urlParams.has('contrast')) state.isManualHighContrast = (urlParams.get('contrast') === 'true' || urlParams.get('contrast') === '1');
+            if (urlParams.has('invert')) state.isManualInverted = (urlParams.get('invert') === 'true' || urlParams.get('invert') === '1');
+            if (urlParams.has('step')) customZoomStep = parseFloat(urlParams.get('step')) / 100;
+            if (urlParams.has('muted')) state.isMuted = (urlParams.get('muted') === 'true' || urlParams.get('muted') === '1');
+
+            // Shareable URL Custom Theme Injection (validated before use)
+            const urlText = urlParams.get('text');
+            const urlBg = urlParams.get('bg');
+            if (urlText && urlBg && isSafeHex(urlText) && isSafeHex(urlBg)) {
+                const tHex = urlText.startsWith('#') ? urlText : '#' + urlText;
+                const bHex = urlBg.startsWith('#') ? urlBg : '#' + urlBg;
+                const newId = 'url-custom-' + Date.now();
+                themes.splice(9, 0, {
+                    id: newId, name: 'Shared Custom Theme',
+                    bg: bHex, text: tHex, panel: bHex 
+                });
+                savePrefs();
+                renderAllThemes();
+                applyTheme(newId, false);
+            } else {
+                const autoThemeIdx = parseInt(urlParams.get('theme'));
+                if (!isNaN(autoThemeIdx) && autoThemeIdx >= 0 && autoThemeIdx < themes.length) {
+                    applyTheme(themes[autoThemeIdx].id, false);
+                } else {
+                    applyTheme(state.activeThemeId, false);
+                }
+            }
+            
+            const autoUrl = urlParams.get('url');
+            const autoView = urlParams.get('view');
+            if (autoUrl) {
+                vdoInput.value = autoUrl;
+                startBtn.click();
+            } else if (autoView) {
+                vdoInput.value = "https://vdo.ninja/?view=" + autoView;
+                startBtn.click();
+            } else {
+                // Autofill priority:
+                // 1. Clipboard — only if the browser has ALREADY granted clipboard-read permission
+                //    (never triggers a prompt; if permission is 'prompt' or 'denied' we skip silently)
+                // 2. Last session URL from saved preferences
+                const VDO_PATTERN = /https?:\/\/[^\s]*vdo\.ninja[^\s]*[?&]view=[^\s]*/i;
+                const fillFallback = () => {
+                    if (!vdoInput.value && state.lastSessionUrl) {
+                        vdoInput.value = state.lastSessionUrl;
+                    }
+                };
+                const tryClipboard = () => {
+                    if (navigator.clipboard && navigator.clipboard.readText) {
+                        navigator.clipboard.readText().then(text => {
+                            const match = text && text.match(VDO_PATTERN);
+                            if (match) vdoInput.value = match[0].trim();
+                            else fillFallback();
+                        }).catch(fillFallback);
+                    } else {
+                        fillFallback();
+                    }
+                };
+                // Use Permissions API to check state without prompting (Chrome/Edge/Firefox).
+                // Safari doesn't support clipboard-read in permissions.query, so we fall back safely.
+                if (navigator.permissions && navigator.permissions.query) {
+                    navigator.permissions.query({ name: 'clipboard-read' }).then(result => {
+                        if (result.state === 'granted') tryClipboard();
+                        else fillFallback();
+                    }).catch(fillFallback);
+                } else {
+                    // Permissions API unavailable (Safari) — go straight to fallback, no prompt risk
+                    fillFallback();
+                }
+            }
+            
+            adjustToolbar();
+        });
+        
+        let statusTimeout;
+        let zoomAnnounceTimeout;
+        function showStatus(text, isError = false) {
+            // Colour is handled entirely by CSS variables (var(--text-color) / var(--border-color))
+            // so the status badge always matches the active theme — including on error.
+            // The "Error:" prefix in the message text is the non-colour error cue (WCAG 1.4.1).
+            statusDisplay.style.opacity = '1';
+            clearTimeout(statusTimeout);
+            statusTimeout = setTimeout(() => {
+                statusDisplay.style.opacity = '0';
+            }, CONSTANTS.STATUS_TIMEOUT_MS);
+
+            // Screen reader announcement: debounce zoom messages so rapid zooming
+            // (held key or trackpad) only announces the final level once it settles,
+            // rather than spamming "Zoom: 110%, Zoom: 120%..." into the AT buffer.
+            // All other messages bypass the debounce and announce immediately.
+            const isZoomMsg = text.startsWith('Zoom:') || text.startsWith('Home Zoom:');
+            if (isZoomMsg) {
+                statusDisplay.innerText = text; // keep visual in sync
+                clearTimeout(zoomAnnounceTimeout);
+                zoomAnnounceTimeout = setTimeout(() => {
+                    // Force a re-announce by briefly clearing then restoring
+                    // (live region only fires on content change, so we must toggle)
+                    statusDisplay.innerText = '';
+                    requestAnimationFrame(() => { statusDisplay.innerText = text; });
+                }, 400);
+            } else {
+                clearTimeout(zoomAnnounceTimeout);
+                statusDisplay.innerText = text;
+            }
+        }
+
+        // --- Setup Logic ---
+        startBtn.addEventListener('click', () => {
+            let rawUrl = vdoInput.value.trim();
+            if (!rawUrl) return;
+
+            try {
+                let urlObj = new URL(rawUrl);
+                // Security: only allow http/https — blocks javascript: and data: URI payloads
+                if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+                    throw new Error('Invalid protocol');
+                }
+                urlObj.searchParams.set('clean', 'true');
+                urlObj.searchParams.set('transparent', 'true');
+                urlObj.searchParams.set('autostart', 'true');
+                urlObj.searchParams.set('controls', '0');
+                if (state.isMuted) urlObj.searchParams.set('muted', 'true'); 
+                
+                vdoOrigin = urlObj.origin;
+                vdoInput.removeAttribute('aria-invalid');
+                vdoFrame.src = urlObj.toString();
+                
+                document.body.classList.add('video-active');
+                cachedWorkspaceRect = null; // workspace just became visible — dimensions changed
+                document.getElementById('setup-screen-wrapper').style.display = 'none';
+                workspace.style.display = 'block';
+                freezeBtn.disabled = false;
+
+                vdoFrame.addEventListener('load', () => {
+                    if (state.isMuted && vdoOrigin !== '*') {
+                        vdoFrame.contentWindow.postMessage({"muted": true}, vdoOrigin);
+                    }
+                }, { once: true });
+
+                if (state.isLargeCursorActive) document.body.classList.add('large-cursor-active');
+                document.getElementById('text-mute').innerText = state.isMuted ? "Unmute Audio" : "Mute Audio";
+                
+                renderColors();
+                
+                const urlParams = new URLSearchParams(window.location.search);
+                const autoZoom = urlParams.get('zoom');
+                
+                if (autoZoom !== null && !isNaN(autoZoom) && !windowHasStartedOnce) {
+                    state.streamScale = Math.max(1.0, parseFloat(autoZoom) / 100);
+                } 
+                
+                windowHasStartedOnce = true;
+                state.lastSessionUrl = rawUrl;
+                
+                updateVisuals();
+                updateReadingTools();
+                showStatus("Video Started");
+                savePrefs();
+            } catch (e) {
+                vdoInput.setAttribute('aria-invalid', 'true');
+                vdoInput.focus();
+                showStatus("Error: Invalid URL", true);
+            }
+        });
+
+        vdoInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startBtn.click();
+        });
+
+        // NOTE: Safari does not support CSS url() SVG filters on elements containing iframes,
+        // regardless of compositing layer setup or absolute URL resolution tricks. The colour
+        // themes that rely on feColorMatrix (all non-Natural, non-Grayscale themes) will show
+        // video in greyscale only on Safari. grayscale(), contrast(), invert() and saturate()
+        // CSS filters all work correctly. This is a known unresolved WebKit limitation.
+        const SAFARI_SVG_FILTER_UNSUPPORTED = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        const svgFilterRef = 'url(#theme-filter)';
+        function updateVisuals(previewThemeId = null) {
+            const isVideoActive = document.body.classList.contains('video-active');
+
+            if (isVideoActive) {
+                if (state.streamScale < 1.0) state.streamScale = 1.0;
+
+                const rect = workspace.getBoundingClientRect();
+                const maxPanX = Math.max(0, (rect.width * state.streamScale - rect.width) / 2);
+                const maxPanY = Math.max(0, (rect.height * state.streamScale - rect.height) / 2);
+                
+                state.panX = Math.max(-maxPanX, Math.min(state.panX, maxPanX));
+                state.panY = Math.max(-maxPanY, Math.min(state.panY, maxPanY));
+
+                transformLayer.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.streamScale})`;
+                vdoFrame.style.transform = `scaleX(${state.flipH ? -1 : 1}) scaleY(${state.flipV ? -1 : 1})`;
+
+                let wrapperFilter = '';
+                const targetId = previewThemeId || state.activeThemeId;
+                const activeTheme = themes.find(x => x.id === targetId) || themes[0];
+                
+                if (activeTheme.isNat) {
+                    if (state.isManualInverted) wrapperFilter += 'invert(1) ';
+                    if (state.isManualHighContrast) wrapperFilter += `contrast(${CONSTANTS.CONTRAST_NAT_HIGH}) saturate(${CONSTANTS.CONTRAST_NAT_SATURATION}) `;
+                } else if (activeTheme.isGray) {
+                    wrapperFilter += 'grayscale(100%) ';
+                    if (state.isManualInverted) wrapperFilter += 'invert(1) ';
+                    if (state.isManualHighContrast) wrapperFilter += `contrast(${CONSTANTS.CONTRAST_GRAY_HIGH}) `;
+                } else {
+                    const baseContrast = state.isManualHighContrast ? CONSTANTS.CONTRAST_HIGH : CONSTANTS.CONTRAST_NORMAL;
+                    // Safari cannot apply SVG url() filters to iframes — skip it and fall back
+                    // to greyscale + contrast only. All other CSS filters work fine.
+                    if (!SAFARI_SVG_FILTER_UNSUPPORTED) {
+                        wrapperFilter += `grayscale(100%) contrast(${baseContrast}) ${svgFilterRef} `;
+                    } else {
+                        wrapperFilter += `grayscale(100%) contrast(${baseContrast}) `;
+                    }
+                }
+
+                transformLayer.style.filter = wrapperFilter.trim() || 'none';
+                zoomOutBtn.disabled = (state.streamScale <= 1.0);
+            } else {
+                if (state.homeScale < 0.5) state.homeScale = 0.5;
+                setupScreen.style.transform = `scale(${state.homeScale})`;
+                zoomOutBtn.disabled = (state.homeScale <= 0.5);
+            }
+        }
+
+        // --- Reading Tools Logic ---
+        // updateReadingTools() — full setup: show/hide elements, update all attributes.
+        // Call this when reading MODE or AUTO-FOLLOW state changes.
+        //
+        // applyReadingPosition() — position-only: just moves the line/mask elements.
+        // Call this on every mousemove / drag tick. No DOM queries, no class toggles,
+        // no syncAllIndicators — just the two or three style assignments needed.
+        function updateReadingTools() {
+            const autoText = document.getElementById('text-reading-auto');
+            if (autoText) autoText.innerText = "Auto-Follow (/)";
+
+            if (state.readingMode === 'none') {
+                readingLine.style.display = 'none';
+                maskTop.style.display = 'none';
+                maskBottom.style.display = 'none';
+                maskGapHitbox.style.display = 'none';
+                readingHint.classList.remove('show');
+                readingHint.setAttribute('aria-hidden', 'true');
+                document.getElementById('btn-close-hint').setAttribute('tabindex', '-1');
+            } else if (state.readingMode === 'line') {
+                readingLine.style.display = 'block';
+                maskTop.style.display = 'none';
+                maskBottom.style.display = 'none';
+                maskGapHitbox.style.display = 'none';
+                readingHint.classList.remove('show');
+                readingHint.setAttribute('aria-hidden', 'true');
+                document.getElementById('btn-close-hint').setAttribute('tabindex', '-1');
+            } else if (state.readingMode === 'mask') {
+                readingLine.style.display = 'none';
+                maskTop.style.display = 'block';
+                maskBottom.style.display = 'block';
+                maskGapHitbox.style.display = 'block';
+                
+                if (state.readingAutoFollow && !state.hideReadingHint) {
+                    readingHint.classList.add('show');
+                    readingHint.removeAttribute('aria-hidden');
+                    document.getElementById('btn-close-hint').removeAttribute('tabindex');
+                } else {
+                    readingHint.classList.remove('show');
+                    readingHint.setAttribute('aria-hidden', 'true');
+                    document.getElementById('btn-close-hint').setAttribute('tabindex', '-1');
+                }
+            }
+            // Always update position after a mode/state change, then sync indicators
+            applyReadingPosition();
+            syncAllIndicators();
+        }
+
+        // Lightweight position-only update — safe to call on every mousemove frame.
+        // No visibility toggling, no attribute writes, no indicator sync.
+        function applyReadingPosition() {
+            if (state.readingMode === 'line') {
+                readingLine.style.top = `${state.readingY}px`;
+            } else if (state.readingMode === 'mask') {
+                const top = state.readingY - state.readingGap / 2;
+                const bottom = state.readingY + state.readingGap / 2;
+                maskTop.style.height = `${top}px`;
+                maskBottom.style.top = `${bottom}px`;
+                maskGapHitbox.style.top = `${top}px`;
+                maskGapHitbox.style.height = `${state.readingGap}px`;
+            }
+        }
+
+        function handleReadingDrag(clientY) {
+            if (readingDragTarget === 'line' || readingDragTarget === 'mask-gap') {
+                state.readingY = clientY;
+            } else if (readingDragTarget === 'mask-top') {
+                const bottomEdge = state.readingY + (state.readingGap / 2);
+                const newTop = Math.min(clientY, bottomEdge - 20); 
+                state.readingGap = bottomEdge - newTop;
+                state.readingY = newTop + (state.readingGap / 2);
+            } else if (readingDragTarget === 'mask-bottom') {
+                const topEdge = state.readingY - (state.readingGap / 2);
+                const newBottom = Math.max(clientY, topEdge + 20);
+                state.readingGap = newBottom - topEdge;
+                state.readingY = topEdge + (state.readingGap / 2);
+            }
+            // Lightweight position update only — no full DOM sync on every drag frame
+            applyReadingPosition();
+            savePrefs();
+        }
+
+        // Applies a brief smooth easing for discrete input (zoom buttons only).
+        // Arrow key panning now uses its own velocity loop below.
+        function triggerSnapEasing() {
+            clearTimeout(snapTimeout);
+            transformLayer.classList.add('smooth-snap');
+            snapTimeout = setTimeout(() => transformLayer.classList.remove('smooth-snap'), 300);
+        }
+
+        // --- Arrow Key Pan — held-key continuous engine ---
+        // Tracks which pan keys are currently held. While any are down, a RAF loop
+        // applies acceleration every frame so the view smoothly speeds up the longer
+        // you hold and coasts to a stop when you release — exactly like a game camera.
+        //
+        //   KEY_PAN_ACCEL   — px/frame² added while key is held (controls ramp-up speed)
+        //   KEY_PAN_MAX     — maximum px/frame (top speed)
+        //   KEY_PAN_FRICTION — multiplied each frame when no key is held (coast-out feel)
+        //   KEY_PAN_MIN     — px/frame below which the coast loop stops
+        const KEY_PAN_ACCEL    = 8;     // acceleration per frame while held
+        const KEY_PAN_MAX      = 80;    // top speed in px/frame
+        const KEY_PAN_FRICTION = 0.78;  // deceleration when released (lower = stops faster)
+        const KEY_PAN_MIN      = 0.5;   // threshold to kill the loop
+
+        const heldPanKeys = new Set(); // tracks currently-pressed pan key codes
+        let keyPanVX = 0, keyPanVY = 0;
+        let keyPanRaf = null;
+
+        function stopKeyPanLoop() {
+            if (keyPanRaf) { cancelAnimationFrame(keyPanRaf); keyPanRaf = null; }
+            keyPanVX = 0; keyPanVY = 0;
+        }
+
+        function startKeyPanLoop() {
+            if (keyPanRaf) return; // already running
+            // Skip animation loop when reduce motion is active — apply held direction instantly
+            if (state.reduceMotion) {
+                const rect = workspace.getBoundingClientRect();
+                const step = Math.max(50, Math.max(rect.width, rect.height) * 0.15);
+                if (heldPanKeys.has('left'))  state.panX += step;
+                if (heldPanKeys.has('right')) state.panX -= step;
+                if (heldPanKeys.has('up'))    state.panY += step;
+                if (heldPanKeys.has('down'))  state.panY -= step;
+                updateVisuals();
+                savePrefs();
+                return;
+            }
+            function step() {
+                // Accumulate direction from all currently-held keys
+                let ax = 0, ay = 0;
+                if (heldPanKeys.has('left'))  ax += 1;
+                if (heldPanKeys.has('right')) ax -= 1;
+                if (heldPanKeys.has('up'))    ay += 1;
+                if (heldPanKeys.has('down'))  ay -= 1;
+
+                if (ax !== 0 || ay !== 0) {
+                    // Normalise diagonal so it doesn't move faster than cardinal
+                    const len = Math.sqrt(ax * ax + ay * ay);
+                    keyPanVX += (ax / len) * KEY_PAN_ACCEL;
+                    keyPanVY += (ay / len) * KEY_PAN_ACCEL;
+                    // Clamp to top speed
+                    const speed = Math.sqrt(keyPanVX * keyPanVX + keyPanVY * keyPanVY);
+                    if (speed > KEY_PAN_MAX) {
+                        keyPanVX = (keyPanVX / speed) * KEY_PAN_MAX;
+                        keyPanVY = (keyPanVY / speed) * KEY_PAN_MAX;
+                    }
+                } else {
+                    // No keys held — coast to a stop
+                    keyPanVX *= KEY_PAN_FRICTION;
+                    keyPanVY *= KEY_PAN_FRICTION;
+                    if (Math.abs(keyPanVX) < KEY_PAN_MIN && Math.abs(keyPanVY) < KEY_PAN_MIN) {
+                        keyPanRaf = null;
+                        savePrefs();
+                        return; // loop ends here
+                    }
+                }
+
+                state.panX += keyPanVX;
+                state.panY += keyPanVY;
+                updateVisuals();
+                keyPanRaf = requestAnimationFrame(step);
+            }
+            keyPanRaf = requestAnimationFrame(step);
+        }
+
+        // Called by keydown — registers the key and ensures the loop is running
+        function pressKeyPan(direction) {
+            heldPanKeys.add(direction);
+            startKeyPanLoop();
+        }
+
+        // Called by keyup — unregisters the key; loop coasts out naturally
+        function releaseKeyPan(direction) {
+            heldPanKeys.delete(direction);
+            // If all keys released and we were barely moving, stop immediately
+            if (heldPanKeys.size === 0 &&
+                Math.abs(keyPanVX) < KEY_PAN_MIN * 2 &&
+                Math.abs(keyPanVY) < KEY_PAN_MIN * 2) {
+                stopKeyPanLoop();
+                savePrefs();
+            }
+        }
+
+        function setScale(newScale) {
+            const isVideoActive = document.body.classList.contains('video-active');
+            if (isVideoActive) {
+                // FIX: Restore upper bound cap using CONSTANTS.MAX_SCALE to prevent unbounded zoom
+                const targetScale = Math.max(1.0, Math.min(newScale, CONSTANTS.MAX_SCALE));
+                if (state.streamScale > 0) {
+                    const ratio = targetScale / state.streamScale;
+                    state.panX *= ratio;
+                    state.panY *= ratio;
+                }
+                state.streamScale = targetScale;
+                showStatus(`Zoom: ${Math.round(state.streamScale * 100)}%`);
+            } else {
+                state.homeScale = Math.max(0.5, Math.min(newScale, 4.0));
+                showStatus(`Home Zoom: ${Math.round(state.homeScale * 100)}%`);
+            }
+            updateVisuals();
+            savePrefs();
+        }
+
+        function performZoom(direction) {
+            const isVideoActive = document.body.classList.contains('video-active');
+            const currentScale = isVideoActive ? state.streamScale : state.homeScale;
+            let targetScale;
+            if (customZoomStep) {
+                targetScale = currentScale + (customZoomStep * direction);
+            } else {
+                let step;
+                if (direction > 0) {
+                    if (currentScale < 3.0) step = 0.5;
+                    else if (currentScale < 10.0) step = 1.0;
+                    else if (currentScale < 20.0) step = 2.0;
+                    else step = 2.5;
+                } else {
+                    if (currentScale <= 3.0) step = 0.5;
+                    else if (currentScale <= 10.0) step = 1.0;
+                    else if (currentScale <= 20.0) step = 2.0;
+                    else step = 2.5;
+                }
+                let inverseStep = 1 / step;
+                targetScale = direction > 0 
+                    ? Math.ceil((currentScale + 0.01) * inverseStep) / inverseStep 
+                    : Math.floor((currentScale - 0.01) * inverseStep) / inverseStep;
+            }
+            setScale(targetScale);
+            triggerSnapEasing();
+        }
+
+        function toggleMenu() {
+            state.isMenuHidden = !state.isMenuHidden;
+            toolbar.style.display = state.isMenuHidden ? 'none' : 'flex';
+            cachedWorkspaceRect = null; // toolbar hide/show changes workspace height
+            showStatus(state.isMenuHidden ? "Menu Hidden (Press H or Esc to show)" : "Menu Visible");
+            savePrefs();
+        }
+        
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(e => {
+                    // Fullscreen request failed (e.g. permissions policy) — fail silently
+                });
+                showStatus("Full Screen Enabled");
+            } else {
+                document.exitFullscreen();
+                showStatus("Full Screen Exited");
+            }
+        }
+
+        function toggleFreeze() {
+            // Guard: only operate when video is active and a safe origin is established
+            if (!document.body.classList.contains('video-active') || vdoOrigin === '*') return;
+            
+            state.isFrozen = !state.isFrozen;
+            if (state.isFrozen) {
+                vdoFrame.contentWindow.postMessage({"pause": true}, vdoOrigin);
+                vdoFrame.contentWindow.postMessage({"action": "pause"}, vdoOrigin);
+                vdoFrame.contentWindow.postMessage("pause", vdoOrigin);
+                freezeBtn.classList.add('active-state');
+                freezeBtn.setAttribute('aria-pressed', 'true');
+                freezeBtn.setAttribute('aria-label', 'Unfreeze Frame');
+                showStatus("Frame Frozen");
+            } else {
+                vdoFrame.contentWindow.postMessage({"play": true}, vdoOrigin);
+                vdoFrame.contentWindow.postMessage({"action": "play"}, vdoOrigin);
+                vdoFrame.contentWindow.postMessage("play", vdoOrigin);
+                freezeBtn.classList.remove('active-state');
+                freezeBtn.setAttribute('aria-pressed', 'false');
+                freezeBtn.setAttribute('aria-label', 'Freeze Frame');
+                showStatus("Frame Unfrozen");
+            }
+            savePrefs();
+        }
+
+        // --- Button Listeners ---
+        document.getElementById('btn-zoom-in').addEventListener('click', () => performZoom(1));
+        zoomOutBtn.addEventListener('click', () => performZoom(-1));
+        freezeBtn.addEventListener('click', toggleFreeze);
+        document.getElementById('btn-hide').addEventListener('click', toggleMenu);
+        document.getElementById('btn-fullscreen').addEventListener('click', () => {
+            toggleFullscreen();
+            closeAllDropdowns();
+        });
+        
+        // wrapDropdownAction: closes the dropdown after the action (default for most menus)
+        // wrapMenuAction: keeps the dropdown open — used for More Options toggles so users
+        // can flip multiple settings in one visit without reopening the menu each time.
+        const wrapDropdownAction = (btnId, action) => {
+            document.getElementById(btnId).addEventListener('click', (e) => {
+                action();
+                savePrefs();
+                closeAllDropdowns();
+                e.stopPropagation();
+            });
+        };
+        const wrapMenuAction = (btnId, action) => {
+            document.getElementById(btnId).addEventListener('click', (e) => {
+                action();
+                savePrefs();
+                // Do NOT close the dropdown — let user keep clicking
+                e.stopPropagation();
+            });
+        };
+
+        wrapDropdownAction('btn-reading-none', () => {
+            state.readingMode = 'none'; updateReadingTools(); showStatus("Reading Tools Off");
+        });
+        wrapDropdownAction('btn-reading-line', () => {
+            state.readingMode = state.readingMode === 'line' ? 'none' : 'line';
+            updateReadingTools(); 
+            showStatus(state.readingMode === 'line' ? "Reading Line On" : "Reading Tools Off");
+        });
+        wrapDropdownAction('btn-reading-mask', () => {
+            state.readingMode = state.readingMode === 'mask' ? 'none' : 'mask'; 
+            updateReadingTools(); 
+            showStatus(state.readingMode === 'mask' ? "Reading Mask On" : "Reading Tools Off");
+        });
+        wrapDropdownAction('btn-reading-auto', () => {
+            state.readingAutoFollow = !state.readingAutoFollow;
+            updateReadingTools();
+            showStatus(state.readingAutoFollow ? "Auto-Follow: ON" : "Auto-Follow: OFF");
+        });
+
+        // Mask height presets: sets readingGap to a viewport-relative size and activates mask mode
+        const MASK_PRESETS = { small: 0.06, medium: 0.14, large: 0.25 };
+        function applyMaskPreset(fraction) {
+            const h = workspace.clientHeight || window.innerHeight;
+            state.readingGap = Math.round(h * fraction);
+            // Centre the gap at the current readingY; if starting fresh, centre on screen
+            if (state.readingMode !== 'mask') {
+                state.readingY = Math.round(h / 2);
+                state.readingMode = 'mask';
+                state.readingAutoFollow = true;
+            }
+            updateReadingTools();
+            showStatus(`Mask: ${state.readingGap}px window`);
+        }
+        wrapDropdownAction('btn-mask-small',  () => applyMaskPreset(MASK_PRESETS.small));
+        wrapDropdownAction('btn-mask-medium', () => applyMaskPreset(MASK_PRESETS.medium));
+        wrapDropdownAction('btn-mask-large',  () => applyMaskPreset(MASK_PRESETS.large));
+
+        wrapMenuAction('btn-toggle-hover-pan', () => {
+            state.hoverPan = !state.hoverPan;
+            if (!state.hoverPan) stopHoverPanLoop();
+            syncAllIndicators();
+            showStatus(state.hoverPan ? "Hover Panning: ON" : "Hover Panning: OFF");
+        });
+        wrapMenuAction('btn-flip-h', () => {
+            state.flipH = !state.flipH; updateVisuals(); syncAllIndicators();
+            showStatus(state.flipH ? "Flipped Horizontally" : "Flip H: OFF");
+        });
+        wrapMenuAction('btn-flip-v', () => {
+            state.flipV = !state.flipV; updateVisuals(); syncAllIndicators();
+            showStatus(state.flipV ? "Flipped Vertically" : "Flip V: OFF");
+        });
+        wrapMenuAction('btn-mute', () => {
+            state.isMuted = !state.isMuted;
+            document.getElementById('text-mute').innerText = state.isMuted ? "Unmute Audio" : "Mute Audio";
+            if (document.body.classList.contains('video-active') && vdoOrigin !== '*') {
+                vdoFrame.contentWindow.postMessage({"muted": state.isMuted}, vdoOrigin);
+            }
+            syncAllIndicators();
+            showStatus(state.isMuted ? "Audio: Muted" : "Audio: Unmuted");
+        });
+        wrapMenuAction('btn-contrast', () => {
+            state.isManualHighContrast = !state.isManualHighContrast;
+            updateVisuals(); syncAllIndicators();
+            showStatus(state.isManualHighContrast ? "Contrast: ON" : "Contrast: OFF");
+        });
+        wrapMenuAction('btn-invert', () => {
+            state.isManualInverted = !state.isManualInverted;
+            renderColors(); updateVisuals(); syncAllIndicators();
+            showStatus(state.isManualInverted ? "Invert: ON" : "Invert: OFF");
+        });
+        wrapMenuAction('btn-toggle-cursor', () => {
+            state.isLargeCursorActive = !state.isLargeCursorActive;
+            if (state.isLargeCursorActive) document.body.classList.add('large-cursor-active');
+            else document.body.classList.remove('large-cursor-active');
+            syncAllIndicators();
+            showStatus(state.isLargeCursorActive ? "Large Cursor: ON" : "Large Cursor: OFF");
+        });
+
+        wrapMenuAction('btn-toggle-reduce-motion', () => {
+            state.reduceMotion = !state.reduceMotion;
+            if (state.reduceMotion) {
+                document.body.classList.add('reduce-motion-active');
+                // Stop all running animation loops immediately — snap to current target
+                stopMomentum();
+                stopHoverPanLoop();
+                stopKeyPanLoop();
+            } else {
+                document.body.classList.remove('reduce-motion-active');
+            }
+            syncAllIndicators();
+            showStatus(state.reduceMotion ? "Reduce Motion: ON" : "Reduce Motion: OFF");
+        });
+
+        wrapMenuAction('btn-reset-view', () => {
+            state.streamScale = 1; state.panX = 0; state.panY = 0;
+            state.flipH = false; state.flipV = false;
+            updateVisuals();
+            syncAllIndicators();
+            showStatus("View Reset");
+        });
+
+        wrapMenuAction('btn-toggle-no-memory', () => {
+            state.noMemory = !state.noMemory;
+            const btn = document.getElementById('btn-toggle-no-memory');
+            if (state.noMemory) {
+                btn.classList.add('active-state');
+                try {
+                    localStorage.removeItem('vdoMagnifierPrefs');
+                    localStorage.removeItem('vdoMagnifierThemes');
+                } catch(e) {}
+                showStatus("Preferences: Not Saved");
+            } else {
+                btn.classList.remove('active-state');
+                savePrefs();
+                showStatus("Preferences: Saving");
+            }
+            syncAllIndicators();
+        });
+
+        document.getElementById('btn-reset-all').addEventListener('click', () => {
+            vdoFrame.src = 'about:blank'; // Force disconnect before redirect
+            try {
+                localStorage.removeItem('vdoMagnifierThemes');
+                localStorage.removeItem('vdoMagnifierPrefs');
+            } catch(e) {}
+            window.location.href = window.location.protocol + "//" + window.location.host + window.location.pathname; 
+        });
+
+        // --- Keyboard Shortcuts ---
+        // Helper: returns true if keyboard input should be captured by the UI rather than
+        // treated as an app shortcut. Covers: text inputs, open dropdowns, open modal.
+        function isUICaptured() {
+            if (document.activeElement.tagName === 'INPUT') return true;
+            if (customModal.getAttribute('aria-hidden') !== 'true') return true;
+            if (document.querySelector('.dropdown-content.show')) return true;
+            return false;
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (isUICaptured()) return;
+
+            if (e.key >= '0' && e.key <= '8') {
+                clearTimeout(previewTimeout);
+                const idx = parseInt(e.key);
+                if (idx === 0) {
+                    // Key 0 is always Natural Colors regardless of drag order
+                    const natTheme = themes.find(t => t.id === 'nat');
+                    if (natTheme) applyTheme('nat', false);
+                } else if (idx < themes.length) {
+                    applyTheme(themes[idx].id, false);
+                }
+                return;
+            }
+
+            if (e.key === '(' || (e.key === '9' && e.shiftKey)) {
+                openCustomModal();
+                return;
+            }
+
+            switch(e.key.toLowerCase()) {
+                case '9':
+                    if (document.body.classList.contains('video-active')) {
+                        document.getElementById('btn-extended-themes').click();
+                    } else {
+                        document.getElementById('btn-toggle-extended').click();
+                    }
+                    break;
+                case '=':
+                case '+':
+                    performZoom(1); break;
+                case '-':
+                case '_':
+                    performZoom(-1); break;
+                case ',':
+                    document.getElementById('btn-reading-line').click(); break;
+                case '.':
+                    document.getElementById('btn-reading-mask').click(); break;
+                case '/':
+                    if (document.body.classList.contains('video-active')) {
+                        e.preventDefault(); 
+                        document.getElementById('btn-reading-auto').click(); 
+                    }
+                    break;
+                case 'p':
+                    document.getElementById('btn-toggle-hover-pan').click(); break;
+                case 'arrowup':
+                case 'w':
+                    if (e.shiftKey) return;
+                    e.preventDefault(); pressKeyPan('up'); break;
+                case 'arrowdown':
+                case 's':
+                    if (e.shiftKey) return;
+                    e.preventDefault(); pressKeyPan('down'); break;
+                case 'arrowleft':
+                case 'a':
+                    if (e.shiftKey) return;
+                    e.preventDefault(); pressKeyPan('left'); break;
+                case 'arrowright':
+                case 'd':
+                    if (e.shiftKey) return;
+                    e.preventDefault(); pressKeyPan('right'); break;
+                case 'x':
+                    document.getElementById('btn-toggle-cursor').click(); break;
+                case 'i':
+                    document.getElementById('btn-invert').click(); break;
+                case 'c':
+                    document.getElementById('btn-contrast').click(); break;
+                case 'r':
+                    document.getElementById('btn-reset-view').click(); break;
+                case 'm':
+                    toggleFullscreen(); break;
+                case 'h':
+                    toggleMenu(); break;
+                case 'escape':
+                    if (customModal.getAttribute('aria-hidden') !== 'true') {
+                        closeCustomModal();
+                    } else if (document.querySelector('.dropdown-content.show')) {
+                        closeAllDropdowns(true);
+                    } else {
+                        toggleMenu();
+                    }
+                    break;
+                // FIX: Wrap case body in a block to allow lexical declarations (const) safely
+                case 't': {
+                    clearTimeout(previewTimeout);
+                    const idxToCycle = themes.findIndex(t => t.id === state.activeThemeId);
+                    if (e.shiftKey) applyTheme(themes[(idxToCycle - 1 + themes.length) % themes.length].id, false);
+                    else applyTheme(themes[(idxToCycle + 1) % themes.length].id, false);
+                    break;
+                }
+                case 'f':
+                    toggleFreeze(); break;
+            }
+        });
+
+        // Release held pan keys on keyup so the coast-out can begin
+        document.addEventListener('keyup', (e) => {
+            if (isUICaptured()) {
+                // Always release all pan keys when UI is captured — prevents keys getting
+                // stuck held when e.g. a dropdown opens mid-keypress
+                heldPanKeys.clear();
+                return;
+            }
+            switch(e.key.toLowerCase()) {
+                case 'arrowup':    case 'w': releaseKeyPan('up');    break;
+                case 'arrowdown':  case 's': releaseKeyPan('down');  break;
+                case 'arrowleft':  case 'a': releaseKeyPan('left');  break;
+                case 'arrowright': case 'd': releaseKeyPan('right'); break;
+            }
+        });
+
+        // --- Hover Pan (Fusion-style interpolation) ---
+        // The view smoothly interpolates toward a cursor-mapped target each animation frame.
+        //
+        // Performance notes:
+        //   • workspace rect is cached and only re-read on window resize — avoids forced
+        //     layout reflow on every mousemove event (which was the previous lag source).
+        //   • The lerp loop only runs while the view hasn't reached its target; it stops
+        //     itself once settled, then restarts on the next mousemove.
+        const HOVER_PAN_EASE      = 0.12;  // lerp factor per frame (60fps target)
+        const HOVER_PAN_DEAD_ZONE = 0.08;  // fractional centre dead-zone (8% each side)
+        const HOVER_PAN_CURVE     = 2.2;   // power curve: gentle centre, strong edges
+
+        let hoverPanTargetX = 0, hoverPanTargetY = 0;
+        let hoverPanRaf = null;
+        // Cached workspace rect — refreshed on resize, not on every mousemove
+        let cachedWorkspaceRect = null;
+
+        function getWorkspaceRect() {
+            if (!cachedWorkspaceRect) cachedWorkspaceRect = workspace.getBoundingClientRect();
+            return cachedWorkspaceRect;
+        }
+
+        // Invalidate the cache when the window resizes
+        window.addEventListener('resize', () => { cachedWorkspaceRect = null; });
+
+        function startHoverPanLoop() {
+            if (hoverPanRaf) return;
+            // Skip lerp when reduce motion is active — snap directly to target
+            if (state.reduceMotion) {
+                state.panX = hoverPanTargetX;
+                state.panY = hoverPanTargetY;
+                updateVisuals();
+                return;
+            }
+            function step() {
+                const dx = hoverPanTargetX - state.panX;
+                const dy = hoverPanTargetY - state.panY;
+                if (Math.abs(dx) < 0.3 && Math.abs(dy) < 0.3) {
+                    state.panX = hoverPanTargetX;
+                    state.panY = hoverPanTargetY;
+                    updateVisuals();
+                    hoverPanRaf = null;
+                    return;
+                }
+                state.panX += dx * HOVER_PAN_EASE;
+                state.panY += dy * HOVER_PAN_EASE;
+                updateVisuals();
+                hoverPanRaf = requestAnimationFrame(step);
+            }
+            hoverPanRaf = requestAnimationFrame(step);
+        }
+
+        function stopHoverPanLoop() {
+            if (hoverPanRaf) {
+                cancelAnimationFrame(hoverPanRaf);
+                hoverPanRaf = null;
+            }
+        }
+
+        // Maps a normalised cursor axis (0–1) to a signed pan fraction (-1 to +1)
+        // with a centre dead-zone and power-curve edge acceleration.
+        function hoverPanAxis(norm) {
+            const centred = (norm - 0.5) * 2;
+            const abs = Math.abs(centred);
+            if (abs < HOVER_PAN_DEAD_ZONE * 2) return 0;
+            const scaled = (abs - HOVER_PAN_DEAD_ZONE * 2) / (1 - HOVER_PAN_DEAD_ZONE * 2);
+            return Math.sign(centred) * Math.pow(scaled, HOVER_PAN_CURVE);
+        }
+
+        // --- Mouse / Touch Dragging and Panning ---
+        let isDragging = false;
+        let startClientX, startClientY, startPanX, startPanY;
+        // FIX: Declare wheelTimeout at module scope to prevent implicit global / ReferenceError
+        let wheelTimeout;
+        // Used to briefly apply smooth-snap easing after discrete actions (keyboard, buttons)
+        let snapTimeout;
+
+        workspace.addEventListener('mousedown', (e) => {
+            if (e.target.closest('button, input, kbd, a, .dropdown')) return; 
+
+            if (state.readingMode !== 'none') {
+                if (e.target.classList.contains('reading-guide')) {
+                    readingDragTarget = 'line'; state.readingAutoFollow = false;
+                    syncAllIndicators(); return;
+                }
+                if (e.target.classList.contains('mask-handle-top')) {
+                    readingDragTarget = 'mask-top'; state.readingAutoFollow = false;
+                    syncAllIndicators(); return;
+                }
+                if (e.target.classList.contains('mask-handle-bottom')) {
+                    readingDragTarget = 'mask-bottom'; state.readingAutoFollow = false;
+                    syncAllIndicators(); return;
+                }
+                if (e.target.classList.contains('mask-gap-hitbox')) {
+                    readingDragTarget = 'mask-gap'; state.readingAutoFollow = false;
+                    syncAllIndicators(); return;
+                }
+            }
+
+            isDragging = true;
+            // Stop any ongoing hover pan or keyboard pan momentum so drag takes over cleanly
+            stopHoverPanLoop();
+            stopKeyPanLoop();
+            transformLayer.classList.add('fast-tracking'); 
+            startClientX = e.clientX;
+            startClientY = e.clientY;
+            startPanX = state.panX;
+            startPanY = state.panY;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            // Reading Tools Handle Drag — highest priority
+            if (readingDragTarget) {
+                handleReadingDrag(e.clientY);
+                return;
+            }
+
+            // Reading Tools Auto Follow — use the lightweight position-only update,
+            // never the full updateReadingTools() which is expensive on every frame.
+            if (state.readingAutoFollow && !isDragging && state.readingMode !== 'none' && document.body.classList.contains('video-active')) {
+                state.readingY = e.clientY;
+                applyReadingPosition();
+            }
+
+            // Standard Click & Drag Panning — takes priority over hover pan while button is held
+            if (isDragging) {
+                const dx = (e.clientX - startClientX);
+                const dy = (e.clientY - startClientY);
+                state.panX = startPanX + dx;
+                state.panY = startPanY + dy;
+                updateVisuals();
+                return;
+            }
+
+            // Hover Pan Logic — Fusion-style interpolation, only when not dragging
+            if (state.hoverPan && document.body.classList.contains('video-active') && state.streamScale > 1) {
+                const rect = getWorkspaceRect();
+                const maxPanX = Math.max(0, (rect.width * state.streamScale - rect.width) / 2);
+                const maxPanY = Math.max(0, (rect.height * state.streamScale - rect.height) / 2);
+
+                const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+                hoverPanTargetX = -hoverPanAxis(normX) * maxPanX;
+                hoverPanTargetY = -hoverPanAxis(normY) * maxPanY;
+
+                if (!hoverPanRaf) startHoverPanLoop();
+            } else if (hoverPanRaf) {
+                stopHoverPanLoop();
+            }
+        });
+
+        window.addEventListener('mouseup', () => { 
+            if (isDragging || readingDragTarget) savePrefs(); 
+            isDragging = false; 
+            readingDragTarget = null;
+            transformLayer.classList.remove('fast-tracking');
+        });
+        window.addEventListener('blur', () => { 
+            if (isDragging || readingDragTarget) savePrefs();
+            isDragging = false; 
+            readingDragTarget = null;
+            transformLayer.classList.remove('fast-tracking');
+            // Release all held pan keys so nothing stays "stuck" after focus loss
+            heldPanKeys.clear();
+        });
+
+        // --- Momentum / Inertia Engine ---
+        // Gives trackpad swipes and touch flicks the same coasting feel as Figma/Canva.
+        // When the user lifts their finger or stops scrolling, the view decelerates smoothly
+        // rather than stopping dead. Momentum is NOT applied to pinch-zoom or click-drag
+        // (those feel better with instant 1:1 response).
+        let momentumVX = 0, momentumVY = 0;
+        let momentumRaf = null;
+        const MOMENTUM_FRICTION = 0.88; // 0–1: lower = stops faster, higher = coasts longer
+        const MOMENTUM_MIN = 0.5;       // px/frame below which we stop the loop
+
+        function stopMomentum() {
+            if (momentumRaf) {
+                cancelAnimationFrame(momentumRaf);
+                momentumRaf = null;
+            }
+            momentumVX = 0;
+            momentumVY = 0;
+        }
+
+        function startMomentum() {
+            stopMomentum();
+            // Skip momentum coast when reduce motion is active — stop dead immediately
+            if (state.reduceMotion) {
+                transformLayer.classList.remove('fast-tracking');
+                savePrefs();
+                return;
+            }
+            function step() {
+                momentumVX *= MOMENTUM_FRICTION;
+                momentumVY *= MOMENTUM_FRICTION;
+                if (Math.abs(momentumVX) < MOMENTUM_MIN && Math.abs(momentumVY) < MOMENTUM_MIN) {
+                    transformLayer.classList.remove('fast-tracking');
+                    savePrefs();
+                    momentumRaf = null;
+                    return;
+                }
+                state.panX += momentumVX;
+                state.panY += momentumVY;
+                updateVisuals();
+                momentumRaf = requestAnimationFrame(step);
+            }
+            momentumRaf = requestAnimationFrame(step);
+        }
+
+        // Prevent Chrome/Safari native pinch-zoom from scaling the whole page.
+        // We handle ctrlKey+wheel ourselves inside the workspace; everywhere else we just block it.
+        document.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) e.preventDefault();
+        }, { passive: false });
+
+        // { passive: false } is required to intercept and prevent native browser zoom/scroll bouncing.
+        // Trackpad 2-finger swipe  → wheel events with deltaX/deltaY (no ctrlKey)  → pan with momentum
+        // Trackpad pinch-to-zoom   → wheel events with ctrlKey/metaKey              → zoom (no momentum)
+        workspace.addEventListener('wheel', (e) => {
+            if (e.target.closest('button, input, kbd, a, .dropdown')) return;
+            e.preventDefault();
+
+            if (e.ctrlKey || e.metaKey) {
+                // Pinch-to-zoom: instant, no momentum
+                stopMomentum();
+                transformLayer.classList.add('fast-tracking');
+                setScale(state.streamScale - (e.deltaY * CONSTANTS.PINCH_SENSITIVITY));
+                // Restore easing after zoom input settles
+                clearTimeout(wheelTimeout);
+                wheelTimeout = setTimeout(() => {
+                    transformLayer.classList.remove('fast-tracking');
+                    savePrefs();
+                }, 150);
+            } else {
+                // 2-finger trackpad swipe: apply delta and accumulate velocity for momentum
+                stopMomentum();
+                transformLayer.classList.add('fast-tracking');
+                state.panX -= e.deltaX;
+                state.panY -= e.deltaY;
+                updateVisuals();
+                // Seed momentum velocity from the current swipe delta
+                momentumVX = -e.deltaX * 0.3;
+                momentumVY = -e.deltaY * 0.3;
+                // Debounce: when wheel events stop firing, kick off the momentum coast
+                clearTimeout(wheelTimeout);
+                wheelTimeout = setTimeout(() => startMomentum(), 40);
+            }
+        }, { passive: false });
+
+        // --- Touch (Touchscreen) ---
+        // 1-finger drag  → pan with momentum on lift
+        // 2-finger pinch → zoom (no momentum)
+        // Reading tool overlays → drag reading line / mask handles
+
+        let initialPinchDistance = null;
+        let initialScale = 1;
+        // Track last two touch positions to seed momentum on touchend
+        let lastTouchX = 0, lastTouchY = 0;
+        let prevTouchX = 0, prevTouchY = 0;
+
+        // --- Block Safari swipe-back / swipe-forward / pull-to-refresh on entire document ---
+        // Safari ignores overscroll-behavior for its history gestures unless we also
+        // preventDefault() on touchmove. We block three cases:
+        //   1. Any gesture starting within 30px of the left/right edge (Safari's swipe zone)
+        //   2. Any predominantly horizontal 1-finger gesture
+        //   3. Any predominantly horizontal 2-finger gesture (the previous version skipped these
+        //      entirely with `if (e.touches.length !== 1) return` — that was the hole)
+        //   4. All gestures while video is active (workspace handlers own touch fully)
+        let docTouchStartX = 0, docTouchStartY = 0;
+        let docTouch2StartX = 0, docTouch2StartY = 0;
+
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length >= 1) {
+                docTouchStartX = e.touches[0].clientX;
+                docTouchStartY = e.touches[0].clientY;
+            }
+            if (e.touches.length >= 2) {
+                docTouch2StartX = e.touches[1].clientX;
+                docTouch2StartY = e.touches[1].clientY;
+            }
+        }, { passive: true });
+
+        document.addEventListener('touchmove', (e) => {
+            // During video playback the workspace handlers take full control
+            if (document.body.classList.contains('video-active')) {
+                e.preventDefault();
+                return;
+            }
+
+            // Check first touch point
+            const dx  = e.touches[0].clientX - docTouchStartX;
+            const dy  = e.touches[0].clientY - docTouchStartY;
+            const isHorizontalDominant = Math.abs(dx) > Math.abs(dy) * 0.6;
+            const isEdgeSwipe = docTouchStartX < 30 || docTouchStartX > window.innerWidth - 30;
+
+            if (isHorizontalDominant || isEdgeSwipe) {
+                e.preventDefault();
+                return;
+            }
+
+            // Also check second touch point for 2-finger swipes (e.g. two-finger back gesture)
+            if (e.touches.length >= 2) {
+                const dx2 = e.touches[1].clientX - docTouch2StartX;
+                const dy2 = e.touches[1].clientY - docTouch2StartY;
+                const is2HorizontalDominant = Math.abs(dx2) > Math.abs(dy2) * 0.6;
+                const is2EdgeSwipe = docTouch2StartX < 30 || docTouch2StartX > window.innerWidth - 30;
+                if (is2HorizontalDominant || is2EdgeSwipe) {
+                    e.preventDefault();
+                }
+            }
+        }, { passive: false });
+
+        // { passive: false } is required to allow e.preventDefault() inside touchmove,
+        // which actively prevents the browser's native pull-to-refresh and scrolling while panning.
+        workspace.addEventListener('touchstart', (e) => {
+            if (e.target.closest('button, input, kbd, a, .dropdown')) return;
+            stopMomentum();
+
+            if (e.touches.length === 1) {
+                if (state.readingMode !== 'none') {
+                    const target = e.target;
+                    if (target.classList.contains('reading-guide')) readingDragTarget = 'line';
+                    else if (target.classList.contains('mask-handle-top')) readingDragTarget = 'mask-top';
+                    else if (target.classList.contains('mask-handle-bottom')) readingDragTarget = 'mask-bottom';
+                    else if (target.classList.contains('mask-gap-hitbox')) readingDragTarget = 'mask-gap';
+
+                    if (readingDragTarget) {
+                        state.readingAutoFollow = false;
+                        syncAllIndicators();
+                        return;
+                    }
+                }
+
+                isDragging = true;
+                transformLayer.classList.add('fast-tracking');
+                startClientX = e.touches[0].clientX;
+                startClientY = e.touches[0].clientY;
+                lastTouchX = prevTouchX = startClientX;
+                lastTouchY = prevTouchY = startClientY;
+                startPanX = state.panX;
+                startPanY = state.panY;
+            } else if (e.touches.length === 2) {
+                // Transition from 1-finger to 2-finger: cancel drag, start pinch
+                isDragging = false;
+                stopMomentum();
+                transformLayer.classList.add('fast-tracking');
+                initialPinchDistance = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                initialScale = state.streamScale; // FIX: was incorrectly state.scale
+            }
+        }, { passive: false });
+
+        workspace.addEventListener('touchmove', (e) => {
+            if (e.target.closest('button, input, kbd, a, .dropdown')) return;
+            e.preventDefault();
+
+            if (e.touches.length === 1 && readingDragTarget) {
+                handleReadingDrag(e.touches[0].clientY);
+                return;
+            }
+
+            if (e.touches.length === 1 && isDragging) {
+                // Track velocity: remember the previous frame position to seed momentum
+                prevTouchX = lastTouchX;
+                prevTouchY = lastTouchY;
+                lastTouchX = e.touches[0].clientX;
+                lastTouchY = e.touches[0].clientY;
+
+                const dx = lastTouchX - startClientX;
+                const dy = lastTouchY - startClientY;
+                state.panX = startPanX + dx;
+                state.panY = startPanY + dy;
+                updateVisuals();
+            } else if (e.touches.length === 2 && initialPinchDistance) {
+                const currentDistance = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                setScale(initialScale * (currentDistance / initialPinchDistance));
+            }
+        }, { passive: false });
+
+        workspace.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2) {
+                initialPinchDistance = null;
+            }
+
+            if (e.touches.length === 0) {
+                if (readingDragTarget) {
+                    savePrefs();
+                    readingDragTarget = null;
+                    transformLayer.classList.remove('fast-tracking');
+                    return;
+                }
+
+                if (isDragging) {
+                    isDragging = false;
+                    // Seed momentum from the last two recorded touch positions
+                    const vx = lastTouchX - prevTouchX;
+                    const vy = lastTouchY - prevTouchY;
+                    if (Math.abs(vx) > 1 || Math.abs(vy) > 1) {
+                        momentumVX = vx * 0.8;
+                        momentumVY = vy * 0.8;
+                        startMomentum(); // fast-tracking stays on until momentum exhausts
+                    } else {
+                        transformLayer.classList.remove('fast-tracking');
+                        savePrefs();
+                    }
+                } else {
+                    transformLayer.classList.remove('fast-tracking');
+                    savePrefs();
+                }
+            }
+        });
+
+    </script>
+</body>
+</html>
