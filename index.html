@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="VDO Magnifier — an accessible low-vision tool for magnifying VDO.ninja streams with colour themes, reading masks, and full keyboard support.">
@@ -18,13 +17,16 @@
                Default ships at 1.44 (1.2 × 1.2 per requests).
                Override with ?ui=1.0 (compact), ?ui=1.2, ?ui=2.0 (large), etc. */
             --ui-scale: 1.44;
+            /* UI font: changed by applyFont() when an alternative font is active.
+               Add new entries to FONT_REGISTRY in JS to surface more choices. */
+            --ui-font: system-ui, -apple-system, sans-serif;
         }
 
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: system-ui, -apple-system, sans-serif;
+            font-family: var(--ui-font);
         }
 
         /* Block Safari's swipe-back/forward gesture at the root.
@@ -72,6 +74,17 @@
             flex-shrink: 0;
             font-size: 1em;
             line-height: 1;
+        }
+
+        /* Visually hidden but announced by screen readers (WCAG technique G1) */
+        .visually-hidden {
+            position: absolute;
+            width: 1px; height: 1px;
+            padding: 0; margin: -1px;
+            overflow: hidden;
+            clip: rect(0,0,0,0);
+            white-space: nowrap;
+            border: 0;
         }
 
         /* --- Skip Navigation Link (2.4.1) --- */
@@ -312,6 +325,13 @@
 
         #vdo-input:focus {
             outline: 4px solid var(--text-color);
+        }
+
+        /* Arrow start button — inline with the search bar */
+        #start-btn:hover, #start-btn:focus {
+            opacity: 0.75 !important;
+            outline: 3px solid var(--bg-color) !important;
+            outline-offset: -3px !important;
         }
 
         .primary-btn {
@@ -732,6 +752,390 @@
             border-radius: 3px;
         }
 
+        /* --- Freeze-Frame Snapshot Overlay ---
+           Inside #transform-layer so it inherits zoom/pan (transform) and all
+           CSS filters (invert, contrast, theme colourisation) automatically.
+           position:absolute takes it out of the flex flow; inset:0 fills the layer.
+           z-index 2 = above iframe (1), below reading guides (20).
+           Flip is synced explicitly in updateVisuals() alongside vdoFrame's flip. */
+        #freeze-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 2;
+            opacity: 0;
+            transition: opacity 0.12s ease;
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-color: transparent; /* transparent — transform-layer bg shows through */
+        }
+        #freeze-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* ================================================================
+           TTS / OCR BAR
+           Floating control bar at bottom-centre of workspace.
+           Only shown when video is active AND TTS mode is enabled.
+           ================================================================ */
+
+        #tts-bar {
+            display: none; /* shown by JS when tts is enabled, video is active, and frozen */
+            position: absolute;
+            bottom: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 50;
+            background: var(--panel-bg);
+            border: 2px solid var(--border-color);
+            border-radius: 36px;
+            padding: 8px 14px;
+            gap: 6px;
+            align-items: center;
+            flex-direction: row;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+            min-width: 0;
+            max-width: calc(100vw - 40px);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            user-select: none;
+        }
+        body.video-active.is-frozen #tts-bar.tts-enabled {
+            display: flex;
+        }
+        body.video-active.is-frozen #tts-bar.tts-enabled.bar-visible {
+            opacity: 1;
+        }
+
+        .tts-btn {
+            background: var(--button-bg);
+            color: var(--text-color);
+            border: 1.5px solid var(--border-color);
+            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background 0.15s, color 0.15s;
+            padding: 0;
+        }
+        .tts-btn:hover:not(:disabled) {
+            background: var(--button-hover);
+            color: var(--button-hover-text);
+        }
+        .tts-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+        .tts-btn.tts-active {
+            background: var(--text-color);
+            color: var(--bg-color);
+        }
+
+        /* The main read/pause button is slightly larger */
+        #btn-tts-playpause {
+            width: 46px;
+            height: 46px;
+        }
+
+        #tts-status-label {
+            font-size: 0.78rem;
+            opacity: 0.75;
+            white-space: nowrap;
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 0 4px;
+            pointer-events: none;
+        }
+
+        /* Settings panel that opens from the cog button */
+        #tts-settings-panel {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 10px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--panel-bg);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px 18px;
+            min-width: 280px;
+            max-width: 340px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.7);
+            z-index: 51;
+            flex-direction: column;
+            gap: 12px;
+        }
+        #tts-settings-panel.open {
+            display: flex;
+        }
+        .tts-setting-row {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .tts-setting-row label {
+            font-size: 0.78rem;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .tts-setting-row select,
+        .tts-setting-row input[type=range] {
+            width: 100%;
+            background: var(--button-bg);
+            color: var(--text-color);
+            border: 1.5px solid var(--border-color);
+            border-radius: 8px;
+            padding: 5px 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .tts-setting-row input[type=range] {
+            padding: 4px 0;
+            accent-color: var(--text-color);
+        }
+        .tts-setting-row .radio-group {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .tts-setting-row .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.85rem;
+            text-transform: none;
+            letter-spacing: 0;
+            opacity: 1;
+            cursor: pointer;
+            background: var(--button-bg);
+            border: 1.5px solid var(--border-color);
+            border-radius: 20px;
+            padding: 4px 10px;
+            transition: background 0.1s;
+        }
+        .tts-setting-row .radio-group input[type=radio] {
+            display: none;
+        }
+        .tts-setting-row .radio-group input[type=radio]:checked + span {
+            font-weight: bold;
+        }
+        .tts-setting-row .radio-group label:has(input:checked) {
+            background: var(--text-color);
+            color: var(--bg-color);
+        }
+        .tts-settings-title {
+            font-size: 0.85rem;
+            font-weight: bold;
+            opacity: 0.9;
+            margin-bottom: 2px;
+        }
+        #tts-ocr-status {
+            font-size: 0.75rem;
+            opacity: 0.6;
+            text-align: center;
+            font-style: italic;
+        }
+
+        /* Word highlight overlay — absolutely positioned inside #transform-layer,
+           same coordinate space as the freeze overlay.
+           JS moves and resizes it per-word via inline style.
+           Uses --tts-highlight-color (user-settable) rather than --text-color
+           so it's always visible regardless of the UI theme. */
+        #tts-word-highlight {
+            position: absolute;
+            pointer-events: none;
+            z-index: 3; /* above freeze overlay (2), below reading guides (20) */
+            border-radius: 3px;
+            outline: 3px solid var(--tts-highlight-stroke, #1a1a1a);
+            background: color-mix(in srgb, var(--tts-highlight-color, #FFD700) 55%, transparent);
+            opacity: 0;
+            transition: opacity 0.08s ease, left 0.05s ease, top 0.05s ease,
+                        width 0.05s ease, height 0.05s ease;
+        }
+        #tts-word-highlight.visible {
+            opacity: 1;
+        }
+
+        /* Raw OCR text panel — slides up above the tts-bar when open */
+        #tts-text-panel {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 10px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--panel-bg);
+            color: var(--text-color);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 14px 18px;
+            width: min(90vw, 640px);
+            max-height: 55vh;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.7);
+            z-index: 51;
+            flex-direction: column;
+            gap: 10px;
+            /* Font size is driven by --tts-text-scale so +/- zoom applies */
+            font-size: calc(1rem * var(--tts-text-scale, 1));
+            line-height: 1.6;
+        }
+        #tts-text-panel.open {
+            display: flex;
+        }
+        #tts-text-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        #tts-text-panel-title {
+            font-size: 0.78rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            opacity: 0.8;
+        }
+        .tts-text-zoom-btn {
+            background: var(--button-bg);
+            color: var(--text-color);
+            border: 1.5px solid var(--border-color);
+            border-radius: 6px;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            flex-shrink: 0;
+            transition: background 0.1s;
+        }
+        .tts-text-zoom-btn:hover {
+            background: var(--button-hover);
+            color: var(--button-hover-text);
+        }
+        #tts-raw-text {
+            white-space: pre-wrap;
+            word-break: break-word;
+            /* Inherit font-size from panel so zoom applies */
+        }
+        /* Highlight the currently-speaking unit within the raw text */
+        #tts-raw-text .tts-unit {
+            border-radius: 3px;
+            padding: 0 2px;
+            transition: background 0.1s, color 0.1s;
+        }
+        #tts-raw-text .tts-unit.tts-unit-active {
+            background: var(--text-color);
+            color: var(--bg-color);
+        }
+
+        /* OCR loading spinner shown in tts-status-label */
+        @keyframes tts-spin {
+            to { transform: rotate(360deg); }
+        }
+        .tts-spinner {
+            display: inline-block;
+            width: 10px; height: 10px;
+            border: 2px solid currentColor;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: tts-spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 4px;
+        }
+
+        /* --- Hotkey Card Remapping --- */
+        .hotkey-card.remappable {
+            cursor: pointer;
+            position: relative;
+            transition: border-color 0.15s, transform 0.12s, box-shadow 0.15s;
+        }
+        .hotkey-card.remappable:hover {
+            transform: scale(1.06);
+            border-color: var(--text-color);
+            box-shadow: 0 0 0 2px var(--text-color);
+        }
+        .hotkey-card.remappable:focus {
+            outline: 3px solid var(--text-color);
+            outline-offset: 2px;
+        }
+        /* Listening state: card waiting for a new key press */
+        .hotkey-card.listening {
+            border-color: var(--text-color) !important;
+            box-shadow: 0 0 0 3px var(--text-color) !important;
+            animation: hk-pulse 0.9s ease-in-out infinite alternate;
+        }
+        @keyframes hk-pulse {
+            from { box-shadow: 0 0 0 2px var(--text-color); }
+            to   { box-shadow: 0 0 0 7px transparent; }
+        }
+        /* Small dot on remapped (non-default) keys */
+        .hotkey-card kbd.remapped {
+            border-style: dashed;
+        }
+        .hotkey-card kbd.remapped::after {
+            content: '·';
+            font-size: 1.4em;
+            line-height: 0;
+            vertical-align: middle;
+            margin-left: 2px;
+            opacity: 0.6;
+        }
+        /* Tooltip hint that appears on hover of a remappable card */
+        .hotkey-card.remappable::after {
+            content: 'click to remap';
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s;
+            z-index: 10;
+        }
+        .hotkey-card.remappable:hover::after {
+            opacity: 0.85;
+        }
+        .hotkey-card.listening::after {
+            content: 'hold modifiers + press key…';
+            opacity: 1;
+        }
+        /* Reset hotkeys link */
+        #btn-reset-hotkeys {
+            font-size: 0.85rem;
+            opacity: 0.6;
+            background: none;
+            border: 1px dashed var(--border-color);
+            color: var(--text-color);
+            border-radius: 6px;
+            padding: 5px 14px;
+            cursor: pointer;
+            transition: opacity 0.15s;
+            margin-top: 8px;
+        }
+        #btn-reset-hotkeys:hover {
+            opacity: 1;
+        }
+
         /* --- Reduced Motion --- */
         /* Triggered by the OS-level prefers-reduced-motion setting (default baseline)
            OR by body.reduce-motion-active (the in-app manual toggle).
@@ -779,27 +1183,39 @@
             <h2 id="custom-color-title">Custom Color Builder</h2>
             <p id="custom-color-desc" style="font-size:0.95rem; opacity:0.8; margin:-5px 0 5px;">Adjust the sliders or pick a preset colour, then press Create Theme to add it to your list.</p>
             
-            <div class="color-slider-group" role="group" aria-label="Text Color Adjustments">
-                <h3>Text Color</h3>
+            <div class="color-slider-group" role="group" aria-labelledby="text-color-heading">
+                <h3 id="text-color-heading">Text Color</h3>
                 <div class="palette-grid" role="group" aria-label="Text Color Quick Presets" id="text-palette-grid"></div>
-                <label>Red: <input type="range" id="text-r" min="0" max="255" value="255" aria-label="Text Color Red"></label>
-                <label>Green: <input type="range" id="text-g" min="0" max="255" value="255" aria-label="Text Color Green"></label>
-                <label>Blue: <input type="range" id="text-b" min="0" max="255" value="255" aria-label="Text Color Blue"></label>
+                <label id="text-r-label">Red <span id="text-r-val">255</span></label>
+                <input type="range" id="text-r" min="0" max="255" value="255"
+                       aria-labelledby="text-r-label" aria-valuemin="0" aria-valuemax="255" aria-valuenow="255">
+                <label id="text-g-label">Green <span id="text-g-val">255</span></label>
+                <input type="range" id="text-g" min="0" max="255" value="255"
+                       aria-labelledby="text-g-label" aria-valuemin="0" aria-valuemax="255" aria-valuenow="255">
+                <label id="text-b-label">Blue <span id="text-b-val">255</span></label>
+                <input type="range" id="text-b" min="0" max="255" value="255"
+                       aria-labelledby="text-b-label" aria-valuemin="0" aria-valuemax="255" aria-valuenow="255">
             </div>
             
-            <div class="color-slider-group" role="group" aria-label="Background Color Adjustments">
-                <h3>Background Color</h3>
+            <div class="color-slider-group" role="group" aria-labelledby="bg-color-heading">
+                <h3 id="bg-color-heading">Background Color</h3>
                 <div class="palette-grid" role="group" aria-label="Background Color Quick Presets" id="bg-palette-grid"></div>
-                <label>Red: <input type="range" id="bg-r" min="0" max="255" value="0" aria-label="Background Color Red"></label>
-                <label>Green: <input type="range" id="bg-g" min="0" max="255" value="0" aria-label="Background Color Green"></label>
-                <label>Blue: <input type="range" id="bg-b" min="0" max="255" value="0" aria-label="Background Color Blue"></label>
+                <label id="bg-r-label">Red <span id="bg-r-val">0</span></label>
+                <input type="range" id="bg-r" min="0" max="255" value="0"
+                       aria-labelledby="bg-r-label" aria-valuemin="0" aria-valuemax="255" aria-valuenow="0">
+                <label id="bg-g-label">Green <span id="bg-g-val">0</span></label>
+                <input type="range" id="bg-g" min="0" max="255" value="0"
+                       aria-labelledby="bg-g-label" aria-valuemin="0" aria-valuemax="255" aria-valuenow="0">
+                <label id="bg-b-label">Blue <span id="bg-b-val">0</span></label>
+                <input type="range" id="bg-b" min="0" max="255" value="0"
+                       aria-labelledby="bg-b-label" aria-valuemin="0" aria-valuemax="255" aria-valuenow="0">
             </div>
 
-            <div id="custom-preview-box" aria-live="polite">Sample Text Preview</div>
+            <div id="custom-preview-box" role="status" aria-live="polite" aria-atomic="true" aria-label="Color preview">Sample Text Preview</div>
 
             <div class="modal-actions">
-                <button id="btn-close-custom" class="tool-btn">Cancel</button>
-                <button id="btn-apply-custom" class="primary-btn" style="margin-bottom:0;">Create Theme</button>
+                <button type="button" id="btn-close-custom" class="tool-btn">Cancel</button>
+                <button type="button" id="btn-apply-custom" class="primary-btn" style="margin-bottom:0;">Create Theme</button>
             </div>
         </div>
     </div>
@@ -818,7 +1234,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
         </button>
         
-        <div class="toolbar-divider"></div>
+        <div class="toolbar-divider" role="separator" aria-hidden="true"></div>
         
         <!-- Toolbar Theme Shortcuts -->
         <div id="toolbar-themes" class="toolbar-themes-group" role="radiogroup" aria-label="Favorite Themes">
@@ -845,7 +1261,7 @@
             </div>
         </div>
 
-        <div class="toolbar-divider"></div>
+        <div class="toolbar-divider" role="separator" aria-hidden="true"></div>
 
         <!-- Reading Tools Dropdown -->
         <div class="dropdown" id="reading-tools-container">
@@ -854,22 +1270,22 @@
                 <span id="span-reading" aria-hidden="true">Reading Tools</span>
             </button>
             <div class="dropdown-content" id="reading-tools-menu" role="menu" aria-label="Reading Tools">
-                <button class="tool-btn" id="btn-reading-none" role="menuitem">
+                <button class="tool-btn" id="btn-reading-none" role="menuitemradio" aria-label="Reading tools off" aria-checked="true">
                     <span class="menu-indicator" id="ind-reading-none" aria-hidden="true">□</span>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     Tools Off
                 </button>
-                <button class="tool-btn" id="btn-reading-line" role="menuitem">
+                <button class="tool-btn" id="btn-reading-line" role="menuitemradio" aria-label="Reading line mode" aria-checked="false">
                     <span class="menu-indicator" id="ind-reading-line" aria-hidden="true">□</span>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"></line></svg>
                     Reading Line (,)
                 </button>
-                <button class="tool-btn" id="btn-reading-mask" role="menuitem">
+                <button class="tool-btn" id="btn-reading-mask" role="menuitemradio" aria-label="Reading mask mode" aria-checked="false">
                     <span class="menu-indicator" id="ind-reading-mask" aria-hidden="true">□</span>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="8"></rect></svg>
                     Reading Mask (.)
                 </button>
-                <div class="toolbar-divider" style="width:100%; height:2px; margin: 5px 0;"></div>
+                <div class="toolbar-divider" role="separator" aria-hidden="true" style="width:100%; height:2px; margin: 5px 0;"></div>
                 <!-- Mask window-size presets: icons show proportional gap size visually -->
                 <div style="display:flex; gap:6px; padding: 2px 0;" role="group" aria-label="Mask size presets">
                     <button class="tool-btn" id="btn-mask-small" role="menuitem" aria-label="Mask: narrow window (1 line)" title="Narrow mask window (~1 line)" style="flex:1; justify-content:center; padding:8px;">
@@ -894,8 +1310,8 @@
                         </svg>
                     </button>
                 </div>
-                <div class="toolbar-divider" style="width:100%; height:2px; margin: 5px 0;"></div>
-                <button class="tool-btn" id="btn-reading-auto" role="menuitem">
+                <div class="toolbar-divider" role="separator" aria-hidden="true" style="width:100%; height:2px; margin: 5px 0;"></div>
+                <button class="tool-btn" id="btn-reading-auto" role="menuitemcheckbox" aria-label="Auto-follow cursor" aria-checked="true">
                     <span class="menu-indicator" id="ind-reading-auto" aria-hidden="true">✓</span>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"></path></svg>
                     <span id="text-reading-auto">Auto-Follow (/)</span>
@@ -903,7 +1319,7 @@
             </div>
         </div>
 
-        <div class="toolbar-divider"></div>
+        <div class="toolbar-divider" role="separator" aria-hidden="true"></div>
 
         <!-- Overflow Menu for Leftover Options -->
         <div class="dropdown" id="more-options-container">
@@ -912,49 +1328,64 @@
                 <span id="span-more" aria-hidden="true">More Options</span>
             </button>
             <div class="dropdown-content" id="more-options-menu" role="menu" aria-label="More Options">
-                <button class="tool-btn" id="btn-toggle-hover-pan" role="menuitem" aria-label="Toggle Pointer Hover Panning">
+                <button class="tool-btn" id="btn-toggle-hover-pan" role="menuitemcheckbox" aria-label="Toggle Pointer Hover Panning" aria-checked="false">
                     <span class="menu-indicator" id="ind-hover-pan" aria-hidden="true">□</span>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9l6-6 6 6M11 3v11M5 15l6 6 6-6M11 21v-11"></path></svg>
                     Hover Pan (P)
                 </button>
-                <button class="tool-btn" id="btn-mute" role="menuitem" aria-label="Toggle Audio Mute">
+                <button class="tool-btn" id="btn-mute" role="menuitemcheckbox" aria-label="Toggle Audio Mute" aria-checked="false">
                     <span class="menu-indicator" id="ind-mute" aria-hidden="true">□</span>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
                     <span id="text-mute">Mute Audio</span>
                 </button>
-                <button class="tool-btn" id="btn-flip-h" role="menuitem" aria-label="Flip Image Horizontally">
+                <button class="tool-btn" id="btn-flip-h" role="menuitemcheckbox" aria-label="Flip Image Horizontally" aria-checked="false">
                     <span class="menu-indicator" id="ind-flip-h" aria-hidden="true">□</span>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 9 21 13 17 17"></polyline><polyline points="7 9 3 13 7 17"></polyline><line x1="12" y1="3" x2="12" y2="21"></line></svg>
                     Flip Horizontal
                 </button>
-                <button class="tool-btn" id="btn-flip-v" role="menuitem" aria-label="Flip Image Vertically">
+                <button class="tool-btn" id="btn-flip-v" role="menuitemcheckbox" aria-label="Flip Image Vertically" aria-checked="false">
                     <span class="menu-indicator" id="ind-flip-v" aria-hidden="true">□</span>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 17 13 21 17 17"></polyline><polyline points="9 7 13 3 17 7"></polyline><line x1="3" y1="12" x2="21" y2="12"></line></svg>
                     Flip Vertical
                 </button>
-                <div class="toolbar-divider" style="width:100%; height:2px; margin: 5px 0;"></div>
-                <button class="tool-btn" id="btn-contrast" role="menuitem" aria-label="Toggle Custom Contrast">
+                <div class="toolbar-divider" role="separator" aria-hidden="true" style="width:100%; height:2px; margin: 5px 0;"></div>
+                <button class="tool-btn" id="btn-contrast" role="menuitemcheckbox" aria-label="Toggle high contrast" aria-checked="false">
                     <span class="menu-indicator" id="ind-contrast" aria-hidden="true">□</span>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
                     Contrast (C)
                 </button>
-                <button class="tool-btn" id="btn-invert" role="menuitem" aria-label="Invert Entire View">
+                <button class="tool-btn" id="btn-invert" role="menuitemcheckbox" aria-label="Invert entire view" aria-checked="false">
                     <span class="menu-indicator" id="ind-invert" aria-hidden="true">□</span>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0 0 20z"></path></svg>
                     Invert (I)
                 </button>
-                <button class="tool-btn" id="btn-toggle-cursor" role="menuitem" aria-label="Toggle Large Cursor">
+                <button class="tool-btn" id="btn-toggle-cursor" role="menuitemcheckbox" aria-label="Toggle large cursor" aria-checked="false">
                     <span class="menu-indicator" id="ind-cursor" aria-hidden="true">□</span>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="3,3 21,12 13,14 19,21 16,23 10,16 6,21"></polygon></svg>
                     Large Cursor (X)
                 </button>
-                <button class="tool-btn" id="btn-toggle-reduce-motion" role="menuitem" aria-label="Toggle Reduce Motion">
+                <button class="tool-btn" id="btn-toggle-reduce-motion" role="menuitemcheckbox" aria-label="Toggle reduce motion" aria-checked="false">
                     <span class="menu-indicator" id="ind-reduce-motion" aria-hidden="true">□</span>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
                     Reduce Motion
                 </button>
-                <div class="toolbar-divider" style="width:100%; height:2px; margin: 5px 0;"></div>
-                <button class="tool-btn" id="btn-toggle-no-memory" role="menuitem" aria-label="Toggle preference memory">
+                <button class="tool-btn" id="btn-toggle-dyslexia-font" role="menuitemcheckbox" aria-label="Enable dyslexia-friendly font" aria-checked="false">
+                    <span class="menu-indicator" id="ind-dyslexia-font" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
+                    <span id="text-dyslexia-font">Dyslexia-Friendly Font</span>
+                </button>
+                <div class="toolbar-divider" role="separator" aria-hidden="true" style="width:100%; height:2px; margin: 5px 0;"></div>
+                <button class="tool-btn" id="btn-tts-enable" role="menuitemcheckbox" aria-label="Enable Text-to-Speech OCR" aria-checked="false">
+                    <span class="menu-indicator" id="ind-tts" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                    Text-to-Speech (OCR)
+                </button>
+                <button class="tool-btn" id="btn-scan" role="menuitemcheckbox" aria-label="Enable frame scanning for AI analysis" aria-checked="false" disabled>
+                    <span class="menu-indicator" id="ind-scan" aria-hidden="true">□</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                    Frame Scanning (AI/VLM)
+                </button>
+                <button class="tool-btn" id="btn-toggle-no-memory" role="menuitemcheckbox" aria-label="Remember preferences across sessions" aria-checked="true">
                     <span class="menu-indicator" id="ind-no-memory" aria-hidden="true">□</span>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
                     <span id="text-no-memory">Remember Preferences</span>
@@ -970,12 +1401,18 @@
             </div>
         </div>
 
-        <button class="tool-btn" id="btn-fullscreen" aria-label="Toggle Full Screen" style="margin-left: auto;">
+        <button class="tool-btn" id="btn-fullscreen" aria-label="Toggle full screen" aria-pressed="false" style="margin-left: auto;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
             <span id="span-full" aria-hidden="true">Full Screen (M)</span>
         </button>
 
-        <button class="tool-btn" id="btn-hide" aria-label="Hide Menu Bar">
+        <!-- Debug log copy button — only shown when ?debuglog is in the URL -->
+        <button class="tool-btn" id="btn-copy-log" aria-label="Copy Debug Log to Clipboard" style="display:none; border-color: #ff9900; color: #ff9900;" title="Copy debug log to clipboard">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+            <span aria-hidden="true">Copy Log</span>
+        </button>
+
+        <button class="tool-btn" id="btn-hide" aria-label="Hide menu bar" aria-pressed="false">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
             <span id="span-hide" aria-hidden="true">Hide Menu (H)</span>
         </button>
@@ -991,10 +1428,21 @@
     <div id="setup-screen-wrapper">
         <div id="setup-screen">
             <h1>VDO Magnifier</h1>
-            <label for="vdo-input" style="font-size: 1.2rem;">Paste the View Link:</label>
-            <input type="url" id="vdo-input" placeholder="https://vdo.ninja/?view=..."
-                   autocomplete="url" spellcheck="false" autocorrect="off" autocapitalize="none">
-            <button class="primary-btn" id="start-btn">Start Viewing</button>
+            <label for="vdo-input" style="font-size: 1.2rem;" id="vdo-input-label">Paste the View Link:</label>
+            <div role="group" aria-labelledby="vdo-input-label" style="display:flex; width:100%; max-width:600px; align-items:stretch; margin: 15px 0 12px; border: 3px solid var(--border-color); border-radius: 10px; overflow: hidden;">
+                <input type="url" id="vdo-input" placeholder="https://vdo.ninja/?view=..."
+                       autocomplete="url" spellcheck="false" autocorrect="off" autocapitalize="none"
+                       aria-describedby="vdo-input-hint"
+                       style="flex:1; margin:0; border:none; border-radius:0; padding:15px; font-size:1.5rem; background:var(--bg-color); color:var(--text-color); min-width:0;">
+                <button type="button" id="start-btn" aria-label="Start Viewing"
+                        style="background:var(--text-color); color:var(--bg-color); border:none; border-left: 3px solid var(--border-color); padding:15px 22px; font-size:1.6rem; font-weight:bold; cursor:pointer; flex-shrink:0; line-height:1; transition:opacity 0.2s;">&#8594;</button>
+            </div>
+            <p id="vdo-input-hint" style="font-size:0.85rem; opacity:0.6; margin: -8px 0 12px; text-align:center;">Enter a VDO.ninja view link, or try the example below</p>
+            <button type="button" id="btn-example-stream" class="btn-extended-toggle" aria-label="Load example demo stream" aria-describedby="example-stream-desc" style="margin-bottom: 20px; opacity: 0.75; font-size: 1rem;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Try an example stream
+            </button>
+            <p id="example-stream-desc" class="visually-hidden">Opens a pre-configured VDO.ninja demo stream so you can explore all features without your own stream link</p>
             
             <h2 class="section-title">Favorite Color Themes (Drag to Reorder)</h2>
             <div class="theme-container-flex" id="theme-container" role="radiogroup" aria-label="Primary Color Theme Options">
@@ -1016,40 +1464,44 @@
                 <!-- Themes 9+ injected by JS -->
             </div>
 
-            <h2 class="section-title">Keyboard Shortcuts</h2>
+            <h2 class="section-title">Keyboard Shortcuts <span aria-hidden="true" style="font-size:0.65em; opacity:0.55; font-weight:normal;">(click any key to remap)</span></h2>
+            <p class="visually-hidden">Each remappable shortcut card below is a button. Activate it to enter remapping mode, then press the key combination you want to assign. Press Escape to cancel.</p>
             
-            <h3 class="shortcut-category">Navigation & Zoom</h3>
-            <div class="hotkey-container-flex" role="region" aria-label="Navigation Shortcuts">
-                <div class="hotkey-card"><span>Zoom In</span><kbd>+</kbd></div>
-                <div class="hotkey-card"><span>Zoom Out</span><kbd>-</kbd></div>
-                <div class="hotkey-card"><span>Pan View</span><kbd>Arrows/WASD</kbd></div>
-                <div class="hotkey-card"><span>Hover Pan</span><kbd>P</kbd></div>
-                <div class="hotkey-card"><span>Reset Zoom/Pan</span><kbd>R</kbd></div>
+            <h3 class="shortcut-category">Navigation &amp; Zoom</h3>
+            <div class="hotkey-container-flex" role="list" aria-label="Navigation Shortcuts">
+                <div class="hotkey-card remappable" role="listitem" data-action="zoom-in"      tabindex="0" aria-label="Zoom In: current key +" aria-pressed="false"><span aria-hidden="true">Zoom In</span><kbd data-action-kbd="zoom-in">+</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="zoom-out"     tabindex="0" aria-label="Zoom Out: current key -" aria-pressed="false"><span aria-hidden="true">Zoom Out</span><kbd data-action-kbd="zoom-out">-</kbd></div>
+                <div class="hotkey-card" role="listitem" tabindex="0" aria-label="Pan View: Arrows or W A S D keys (not remappable)"><span aria-hidden="true">Pan View</span><kbd aria-hidden="true">Arrows/WASD</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="hover-pan"    tabindex="0" aria-label="Hover Pan: current key P" aria-pressed="false"><span aria-hidden="true">Hover Pan</span><kbd data-action-kbd="hover-pan">P</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="reset-view"   tabindex="0" aria-label="Reset Zoom and Pan: current key R" aria-pressed="false"><span aria-hidden="true">Reset Zoom/Pan</span><kbd data-action-kbd="reset-view">R</kbd></div>
             </div>
 
-            <h3 class="shortcut-category">Colors & Themes</h3>
-            <div class="hotkey-container-flex" role="region" aria-label="Theme Shortcuts">
-                <div class="hotkey-card"><span>Set Theme</span><kbd>0-8</kbd></div>
-                <div class="hotkey-card"><span>Extended Menu</span><kbd>9</kbd></div>
-                <div class="hotkey-card"><span>Custom Theme</span><kbd>Shift+9</kbd></div>
-                <div class="hotkey-card"><span>Cycle Theme</span><kbd>T / Shift+T</kbd></div>
-                <div class="hotkey-card"><span>Contrast Boost</span><kbd>C</kbd></div>
-                <div class="hotkey-card"><span>Invert Colors</span><kbd>I</kbd></div>
+            <h3 class="shortcut-category">Colors &amp; Themes</h3>
+            <div class="hotkey-container-flex" role="list" aria-label="Theme Shortcuts">
+                <div class="hotkey-card" role="listitem" tabindex="0" aria-label="Set Theme: keys 0 through 8 (not remappable)"><span aria-hidden="true">Set Theme</span><kbd aria-hidden="true">0-8</kbd></div>
+                <div class="hotkey-card" role="listitem" tabindex="0" aria-label="Extended Theme Menu: key 9 (not remappable)"><span aria-hidden="true">Extended Menu</span><kbd aria-hidden="true">9</kbd></div>
+                <div class="hotkey-card" role="listitem" tabindex="0" aria-label="Custom Theme builder: Shift plus 9 (not remappable)"><span aria-hidden="true">Custom Theme</span><kbd aria-hidden="true">Shift+9</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="cycle-theme"  tabindex="0" aria-label="Cycle Theme: current key T" aria-pressed="false"><span aria-hidden="true">Cycle Theme</span><kbd data-action-kbd="cycle-theme">T</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="contrast"     tabindex="0" aria-label="Contrast Boost: current key C" aria-pressed="false"><span aria-hidden="true">Contrast Boost</span><kbd data-action-kbd="contrast">C</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="invert"       tabindex="0" aria-label="Invert Colors: current key I" aria-pressed="false"><span aria-hidden="true">Invert Colors</span><kbd data-action-kbd="invert">I</kbd></div>
             </div>
 
             <h3 class="shortcut-category">Reading Tools</h3>
-            <div class="hotkey-container-flex" role="region" aria-label="Reading Tool Shortcuts">
-                <div class="hotkey-card"><span>Toggle Line</span><kbd>,</kbd></div>
-                <div class="hotkey-card"><span>Toggle Mask</span><kbd>.</kbd></div>
-                <div class="hotkey-card"><span>Auto-Follow</span><kbd>/</kbd></div>
+            <div class="hotkey-container-flex" role="list" aria-label="Reading Tool Shortcuts">
+                <div class="hotkey-card remappable" role="listitem" data-action="reading-line" tabindex="0" aria-label="Toggle Reading Line: current key comma" aria-pressed="false"><span aria-hidden="true">Toggle Line</span><kbd data-action-kbd="reading-line">,</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="reading-mask" tabindex="0" aria-label="Toggle Reading Mask: current key period" aria-pressed="false"><span aria-hidden="true">Toggle Mask</span><kbd data-action-kbd="reading-mask">.</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="auto-follow"  tabindex="0" aria-label="Auto-Follow: current key slash" aria-pressed="false"><span aria-hidden="true">Auto-Follow</span><kbd data-action-kbd="auto-follow">/</kbd></div>
             </div>
 
             <h3 class="shortcut-category">Utilities</h3>
-            <div class="hotkey-container-flex" role="region" aria-label="Utility Shortcuts">
-                <div class="hotkey-card"><span>Large Cursor</span><kbd>X</kbd></div>
-                <div class="hotkey-card"><span>Freeze Frame</span><kbd>F</kbd></div>
-                <div class="hotkey-card"><span>Full Screen</span><kbd>M</kbd></div>
-                <div class="hotkey-card"><span>Hide Menu</span><kbd>H</kbd></div>
+            <div class="hotkey-container-flex" role="list" aria-label="Utility Shortcuts">
+                <div class="hotkey-card remappable" role="listitem" data-action="large-cursor" tabindex="0" aria-label="Large Cursor: current key X" aria-pressed="false"><span aria-hidden="true">Large Cursor</span><kbd data-action-kbd="large-cursor">X</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="freeze"       tabindex="0" aria-label="Freeze Frame: current key F" aria-pressed="false"><span aria-hidden="true">Freeze Frame</span><kbd data-action-kbd="freeze">F</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="fullscreen"   tabindex="0" aria-label="Full Screen: current key M" aria-pressed="false"><span aria-hidden="true">Full Screen</span><kbd data-action-kbd="fullscreen">M</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="hide-menu"    tabindex="0" aria-label="Hide Menu: current key H" aria-pressed="false"><span aria-hidden="true">Hide Menu</span><kbd data-action-kbd="hide-menu">H</kbd></div>
+            </div>
+            <div style="display:flex; justify-content:center; margin-top: 4px;">
+                <button type="button" id="btn-reset-hotkeys" aria-label="Reset all hotkeys to their default key assignments">↺ Reset hotkeys to defaults</button>
             </div>
         </div>
     </div>
@@ -1064,26 +1516,129 @@
                 would offer no script isolation — the URL input should be validated server-side in that scenario.
             -->
             <iframe id="vdo-frame" src="about:blank" allow="autoplay; fullscreen" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" title="VDO Ninja Video Feed" tabindex="-1"></iframe>
+            <!-- Freeze-frame snapshot overlay -->
+            <div id="freeze-overlay" aria-hidden="true"></div>
+            <!-- Word-level TTS highlight: same coordinate space as freeze-overlay -->
+            <div id="tts-word-highlight" aria-hidden="true"></div>
+            <!-- Click-to-jump: transparent overlay, only active when TTS is frozen and has words.
+                 aria-hidden toggled by JS — hidden when inactive, labelled when active. -->
+            <div id="tts-click-overlay" aria-hidden="true" style="display:none;position:absolute;inset:0;z-index:4;cursor:crosshair;" role="button" aria-label="Click anywhere on the frozen frame to jump speech to the nearest word" tabindex="-1"></div>
         </div>
-        
+
         <!-- Overlays for Reading Support -->
         <div id="reading-line" class="reading-guide" style="display:none;" aria-hidden="true"></div>
         <div id="reading-mask-top" class="reading-mask" style="display:none;" aria-hidden="true">
-           <div class="mask-handle-top" role="separator" aria-label="Drag to adjust top of reading window"></div>
+           <div class="mask-handle-top" role="slider" aria-label="Top edge of reading window" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="30" aria-valuetext="Top edge of reading window, drag to resize" tabindex="0"></div>
         </div>
         <div id="reading-mask-bottom" class="reading-mask" style="display:none;" aria-hidden="true">
-           <div class="mask-handle-bottom" role="separator" aria-label="Drag to adjust bottom of reading window"></div>
+           <div class="mask-handle-bottom" role="slider" aria-label="Bottom edge of reading window" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="70" aria-valuetext="Bottom edge of reading window, drag to resize" tabindex="0"></div>
         </div>
-        <div id="reading-mask-gap" class="mask-gap-hitbox" style="display:none;" aria-hidden="true" aria-label="Drag to move reading window"></div>
+        <div id="reading-mask-gap" class="mask-gap-hitbox" style="display:none;" aria-hidden="true"></div>
 
         <!-- Dedicated Hint Container -->
-        <div id="reading-hint" aria-hidden="true">
+        <div id="reading-hint" role="status" aria-live="polite" aria-atomic="true" aria-hidden="true">
             <div style="display:flex; align-items:center; gap:10px;">
-                <span>Tip: Press <b>/</b> to pause Auto-Follow & adjust mask height by pulling its edges</span>
-                <button id="btn-close-hint" aria-label="Dismiss Tip" style="background:none; border:none; color:inherit; cursor:pointer; font-size:1.5rem; font-weight:bold; padding:0 5px;" tabindex="-1">&times;</button>
+                <span>Tip: Press <b>/</b> to pause Auto-Follow &amp; adjust mask height by pulling its edges</span>
+                <button id="btn-close-hint" aria-label="Dismiss tip" style="background:none; border:none; color:inherit; cursor:pointer; font-size:1.5rem; font-weight:bold; padding:0 5px;" tabindex="-1">&times;</button>
             </div>
         </div>
-    </div><!-- /#workspace -->
+
+        <!-- TTS Control Bar — floats at bottom-centre of workspace, visible when TTS enabled + video active -->
+        <div id="tts-bar" role="region" aria-label="Text-to-Speech Controls">
+
+            <!-- Settings panel (opens upward from cog) -->
+            <div id="tts-settings-panel" role="dialog" aria-modal="true" aria-labelledby="tts-settings-title" aria-describedby="tts-settings-desc">
+                <div class="tts-settings-title" id="tts-settings-title">TTS / OCR Settings</div>
+                <p id="tts-settings-desc" class="visually-hidden">Configure the text-to-speech and OCR engine options. Press Escape or click the settings button again to close.</p>
+
+                <div class="tts-setting-row">
+                    <label id="ocr-engine-label">OCR Engine</label>
+                    <div class="radio-group" role="radiogroup" aria-labelledby="ocr-engine-label">
+                        <label id="ocr-engine-native-label" style="display:none">
+                            <input type="radio" name="ocr-engine" value="native"><span>⚡ Native</span>
+                        </label>
+                        <label>
+                            <input type="radio" name="ocr-engine" value="tesseract" checked><span>Tesseract</span>
+                        </label>
+                    </div>
+                    <div id="tts-ocr-status" role="status" aria-live="polite" aria-atomic="true">OCR engine: not loaded</div>
+                </div>
+
+                <div class="tts-setting-row">
+                    <label for="tts-voice-select">Voice</label>
+                    <select id="tts-voice-select" aria-label="Select TTS voice"></select>
+                </div>
+
+                <div class="tts-setting-row">
+                    <label id="tts-unit-label">Reading Unit</label>
+                    <div class="radio-group" role="radiogroup" aria-labelledby="tts-unit-label">
+                        <label><input type="radio" name="tts-unit" value="sentence" checked><span>Sentence</span></label>
+                        <label><input type="radio" name="tts-unit" value="word"><span>Word</span></label>
+                        <label><input type="radio" name="tts-unit" value="paragraph"><span>Paragraph</span></label>
+                    </div>
+                </div>
+
+                <div class="tts-setting-row">
+                    <label id="tts-region-label">OCR Region</label>
+                    <div class="radio-group" role="radiogroup" aria-labelledby="tts-region-label">
+                        <label><input type="radio" name="tts-region" value="viewport" checked><span>Zoomed View</span></label>
+                        <label><input type="radio" name="tts-region" value="full"><span>Full Frame</span></label>
+                    </div>
+                </div>
+
+                <div class="tts-setting-row">
+                    <label for="tts-highlight-color">Highlight Color</label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="color" id="tts-highlight-color" value="#FFD700"
+                               aria-label="Word highlight color"
+                               style="width:36px;height:28px;border:none;background:none;cursor:pointer;padding:0;">
+                        <button type="button" id="btn-tts-highlight-reset" aria-label="Reset word highlight color to default yellow" style="font-size:0.75rem;padding:3px 8px;border-radius:6px;border:1.5px solid var(--border-color);background:var(--button-bg);color:var(--text-color);cursor:pointer;">Reset</button>
+                    </div>
+                </div>
+
+                <div class="tts-setting-row">
+                    <label for="tts-rate-slider">Speed — <span id="tts-rate-label">1.0×</span></label>
+                    <input type="range" id="tts-rate-slider" min="0.5" max="2.5" step="0.1" value="1.0" aria-label="Reading speed" aria-valuemin="0.5" aria-valuemax="2.5" aria-valuenow="1.0">
+                </div>
+
+                <div class="tts-setting-row">
+                    <label for="tts-pitch-slider">Pitch — <span id="tts-pitch-label">1.0</span></label>
+                    <input type="range" id="tts-pitch-slider" min="0.5" max="2.0" step="0.1" value="1.0" aria-label="Voice pitch" aria-valuemin="0.5" aria-valuemax="2.0" aria-valuenow="1.0">
+                </div>
+
+            </div><!-- /#tts-settings-panel -->
+
+            <!-- Raw text panel (opens upward from text button) -->
+            <div id="tts-text-panel" role="region" aria-label="OCR extracted text" aria-live="off">
+                <div id="tts-text-panel-header">
+                    <span id="tts-text-panel-title">OCR Text</span>
+                    <div style="display:flex;gap:4px;align-items:center;">
+                        <button type="button" class="tts-text-zoom-btn" id="btn-tts-text-zoom-out" aria-label="Decrease OCR text panel font size" title="Smaller text">−</button>
+                        <button type="button" class="tts-text-zoom-btn" id="btn-tts-text-zoom-in"  aria-label="Increase OCR text panel font size" title="Larger text">+</button>
+                    </div>
+                </div>
+                <!-- role="log" announces new content as it is appended; aria-live="polite" -->
+                <div id="tts-raw-text" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" aria-label="Extracted text from frozen frame"></div>
+            </div><!-- /#tts-text-panel -->
+
+            <button type="button" class="tts-btn" id="btn-tts-prev" aria-label="Previous sentence" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
+            </button>
+            <button type="button" class="tts-btn" id="btn-tts-playpause" aria-label="Read aloud" disabled>
+                <svg id="tts-play-icon"  width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <svg id="tts-pause-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true" style="display:none"><line x1="6" y1="4" x2="6" y2="20"></line><line x1="18" y1="4" x2="18" y2="20"></line></svg>
+            </button>
+            <button type="button" class="tts-btn" id="btn-tts-next" aria-label="Next sentence" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
+            </button>
+            <span id="tts-status-label" role="status" aria-live="polite" aria-atomic="true">Ready</span>
+            <button type="button" class="tts-btn" id="btn-tts-text" aria-label="Show OCR text panel" aria-expanded="false" aria-controls="tts-text-panel">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="10" y2="18"/></svg>
+            </button>
+            <button type="button" class="tts-btn" id="btn-tts-settings" aria-label="TTS Settings" aria-expanded="false" aria-controls="tts-settings-panel">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </button>
+        </div><!-- /#tts-bar -->
 
     </main><!-- /#main-content -->
 
@@ -1104,6 +1659,53 @@
             CONTRAST_GRAY_HIGH: '200%',
         };
 
+        // --- Debug Log System ---
+        // Enabled by adding ?debuglog to the page URL.
+        // dlog(key, value) appends timestamped entries to debugLog[].
+        // The "Copy Log" toolbar button (shown only in debug mode) serialises the
+        // entire log to JSON and copies it to the clipboard for pasting into a bug report.
+        //
+        // dlog is always defined so it can be called unconditionally throughout the code.
+        // When debug mode is off it's a no-op with negligible overhead.
+        const DEBUG_MODE = new URLSearchParams(window.location.search).has('debuglog');
+        const debugLog = [];   // [ { t, key, value }, ... ]
+
+        function dlog(key, value) {
+            if (!DEBUG_MODE) return;
+            const entry = { t: Date.now(), key, value };
+            debugLog.push(entry);
+            // Also echo to the browser console so DevTools shows it in real-time
+            console.log('[VDOMag]', key, value);
+        }
+
+        if (DEBUG_MODE) {
+            // Reveal the Copy Log button — script runs after DOM is parsed, so direct access is safe
+            const copyLogBtn = document.getElementById('btn-copy-log');
+            if (copyLogBtn) copyLogBtn.style.display = 'flex';
+
+            // Copy Log button handler
+            if (copyLogBtn) copyLogBtn.addEventListener('click', () => {
+                const snapshot = {
+                    captured: new Date().toISOString(),
+                    userAgent: navigator.userAgent,
+                    url: window.location.href,
+                    state: JSON.parse(JSON.stringify(state)),  // deep copy of current state
+                    snapshotPipelineActive: !!snapshotTimer,
+                    latestFrameLen: latestFrame ? latestFrame.length : null,
+                    knownStreamID,
+                    vdoOrigin,
+                    entries: debugLog
+                };
+                const text = JSON.stringify(snapshot, null, 2);
+                navigator.clipboard.writeText(text).then(() => {
+                    showStatus(`Debug log copied (${debugLog.length} entries)`);
+                }).catch(() => {
+                    // Clipboard write failed (e.g. no permission) — fall back to a prompt
+                    window.prompt('Copy the debug log below:', text);
+                });
+            });
+        }
+
         // --- Indicator Helper ---
         // Sets a menu item's □/✓ indicator. id = the span's id, on = boolean.
         function setIndicator(id, on) {
@@ -1113,21 +1715,495 @@
         // Syncs every indicator to current state — called on load and after any toggle.
         function syncAllIndicators() {
             const mode = state.readingMode;
-            setIndicator('ind-reading-none', mode === 'none');
-            setIndicator('ind-reading-line', mode === 'line');
-            setIndicator('ind-reading-mask', mode === 'mask');
-            setIndicator('ind-reading-auto', state.readingAutoFollow);
-            setIndicator('ind-hover-pan',    state.hoverPan);
-            setIndicator('ind-mute',         state.isMuted);
-            setIndicator('ind-flip-h',       state.flipH);
-            setIndicator('ind-flip-v',       state.flipV);
-            setIndicator('ind-contrast',     state.isManualHighContrast);
-            setIndicator('ind-invert',       state.isManualInverted);
-            setIndicator('ind-cursor',       state.isLargeCursorActive);
+
+            // Visual □/✓ indicators (aria-hidden — purely decorative)
+            setIndicator('ind-reading-none',  mode === 'none');
+            setIndicator('ind-reading-line',  mode === 'line');
+            setIndicator('ind-reading-mask',  mode === 'mask');
+            setIndicator('ind-reading-auto',  state.readingAutoFollow);
+            setIndicator('ind-hover-pan',     state.hoverPan);
+            setIndicator('ind-mute',          state.isMuted);
+            setIndicator('ind-flip-h',        state.flipH);
+            setIndicator('ind-flip-v',        state.flipV);
+            setIndicator('ind-contrast',      state.isManualHighContrast);
+            setIndicator('ind-invert',        state.isManualInverted);
+            setIndicator('ind-cursor',        state.isLargeCursorActive);
             setIndicator('ind-reduce-motion', state.reduceMotion);
-            setIndicator('ind-no-memory',    state.noMemory);
+            setIndicator('ind-no-memory',     state.noMemory);
+            setIndicator('ind-scan',          state.isScanActive);
+            setIndicator('ind-tts',           state.isTtsEnabled);
+            setIndicator('ind-dyslexia-font', state.activeFontId !== 'default');
+
+            // Semantic state — aria-checked for menuitemcheckbox / menuitemradio
+            function setChecked(id, on) {
+                const el = document.getElementById(id);
+                if (el) el.setAttribute('aria-checked', on ? 'true' : 'false');
+            }
+            // Reading mode radio group
+            setChecked('btn-reading-none', mode === 'none');
+            setChecked('btn-reading-line', mode === 'line');
+            setChecked('btn-reading-mask', mode === 'mask');
+            // Checkboxes
+            setChecked('btn-reading-auto',        state.readingAutoFollow);
+            setChecked('btn-toggle-hover-pan',    state.hoverPan);
+            setChecked('btn-mute',                state.isMuted);
+            setChecked('btn-flip-h',              state.flipH);
+            setChecked('btn-flip-v',              state.flipV);
+            setChecked('btn-contrast',            state.isManualHighContrast);
+            setChecked('btn-invert',              state.isManualInverted);
+            setChecked('btn-toggle-cursor',       state.isLargeCursorActive);
+            setChecked('btn-toggle-reduce-motion',state.reduceMotion);
+            setChecked('btn-toggle-no-memory',    !state.noMemory); // "Remember" = checked when saving
+            setChecked('btn-scan',                state.isScanActive);
+            setChecked('btn-tts-enable',          state.isTtsEnabled);
+            setChecked('btn-toggle-dyslexia-font',state.activeFontId !== 'default');
+
+            // aria-pressed for standalone toggle buttons outside menus
+            function setPressed(id, on) {
+                const el = document.getElementById(id);
+                if (el) el.setAttribute('aria-pressed', on ? 'true' : 'false');
+            }
+            setPressed('btn-fullscreen', !!document.fullscreenElement);
+            setPressed('btn-hide',       state.isMenuHidden);
         }
 
+
+        // ================================================================
+        // FONT REGISTRY
+        // ================================================================
+        // To add a new font:
+        //   1. Push a new entry into FONT_REGISTRY below.
+        //   2. Supply either a `googleFamily` (loaded via Google Fonts) or a
+        //      `fontFaceUrl` + `fontFaceFormat` (loaded via @font-face from any CDN).
+        //   3. The toggle in More Options cycles: default → font[0] → font[1] → … → default.
+        //
+        // Fields:
+        //   id           — unique key stored in state.activeFontId
+        //   name         — displayed in status bar and button label
+        //   cssStack     — full font-family value, including fallbacks
+        //   googleFamily — if present, a Google Fonts URL query string (loaded on demand)
+        //   fontFaceUrl  — if present (and no googleFamily), injected as @font-face src
+        //   fontFaceFormat — e.g. 'opentype', 'truetype', 'woff2'
+        // ================================================================
+        const FONT_REGISTRY = [
+            {
+                id: 'default',
+                name: 'System Font',
+                cssStack: 'system-ui, -apple-system, sans-serif',
+            },
+            {
+                id: 'opendyslexic',
+                name: 'OpenDyslexic',
+                // OpenDyslexic — specially designed for readers with dyslexia.
+                // Heavy bottoms on each letter create a unique weight so characters
+                // are less likely to be confused or flipped.
+                cssStack: '"OpenDyslexic", "Comic Sans MS", cursive, sans-serif',
+                fontFaceUrl: 'https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/open-dyslexic-regular.otf',
+                fontFaceFormat: 'opentype',
+            },
+            {
+                id: 'atkinson',
+                name: 'Atkinson Hyperlegible',
+                // Atkinson Hyperlegible — designed by the Braille Institute specifically
+                // for low-vision readers. Exaggerated letterform distinctions (g, d, b, q)
+                // also benefit many readers with dyslexia.
+                cssStack: '"Atkinson Hyperlegible", "Arial", sans-serif',
+                googleFamily: 'Atkinson+Hyperlegible:wght@400;700',
+            },
+        ];
+
+        // Tracks which font @face / Google link has already been injected
+        const _loadedFontIds = new Set(['default']);
+
+        // Inject the font resource for a given registry entry (once only).
+        function _injectFontResource(entry) {
+            if (_loadedFontIds.has(entry.id)) return;
+            _loadedFontIds.add(entry.id);
+
+            if (entry.googleFamily) {
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = `https://fonts.googleapis.com/css2?family=${entry.googleFamily}&display=swap`;
+                document.head.appendChild(link);
+            } else if (entry.fontFaceUrl) {
+                const style = document.createElement('style');
+                // Extract a clean family name from the CSS stack (first token, unquoted)
+                const familyName = entry.cssStack.split(',')[0].replace(/['"]/g, '').trim();
+                style.textContent = `
+                    @font-face {
+                        font-family: '${familyName}';
+                        src: url('${entry.fontFaceUrl}') format('${entry.fontFaceFormat || 'opentype'}');
+                        font-weight: normal;
+                        font-style: normal;
+                        font-display: swap;
+                    }`;
+                document.head.appendChild(style);
+            }
+        }
+
+        // Apply a font by id (or cycle to the next one if called with no arg / 'cycle').
+        function applyFont(fontId) {
+            const entry = FONT_REGISTRY.find(f => f.id === fontId) || FONT_REGISTRY[0];
+            _injectFontResource(entry);
+            state.activeFontId = entry.id;
+            document.documentElement.style.setProperty('--ui-font', entry.cssStack);
+            syncAllIndicators();
+            savePrefs();
+        }
+
+        // Cycle through FONT_REGISTRY in order, wrapping back to default.
+        function cycleFontNext() {
+            const idx = FONT_REGISTRY.findIndex(f => f.id === state.activeFontId);
+            const next = FONT_REGISTRY[(idx + 1) % FONT_REGISTRY.length];
+            applyFont(next.id);
+            return next.name;
+        }
+
+        // ================================================================
+        // HOTKEY REGISTRY & REMAPPING ENGINE
+        // ================================================================
+        //
+        // Each entry covers one remappable keyboard action.
+        // `defaultKey`  — the key string used when no custom mapping exists.
+        //                 Single chars are stored lowercase; compared case-insensitively.
+        // `aliases`     — additional default triggers (never stored as custom overrides).
+        // `toolbarSpanId` — optional id of a toolbar label span that shows "(Key)" — updated on remap.
+        //
+        // To add a new remappable action:
+        //   1. Push an entry here with a unique `id`.
+        //   2. Add a `data-action="<id>"` hotkey card in the HTML.
+        //   3. Handle the action id in dispatchHotkeyAction() below.
+        // ================================================================
+        const HOTKEY_REGISTRY = [
+            { id: 'zoom-in',       label: 'Zoom In',       defaultKey: '+', aliases: ['='],  toolbarSpanId: 'span-zoom-in',  toolbarLabel: 'Zoom In' },
+            { id: 'zoom-out',      label: 'Zoom Out',       defaultKey: '-', aliases: ['_'],  toolbarSpanId: 'span-zoom-out', toolbarLabel: 'Zoom Out' },
+            { id: 'hover-pan',     label: 'Hover Pan',      defaultKey: 'p' },
+            { id: 'reset-view',    label: 'Reset Zoom/Pan', defaultKey: 'r' },
+            { id: 'cycle-theme',   label: 'Cycle Theme',    defaultKey: 't' },
+            { id: 'contrast',      label: 'Contrast Boost', defaultKey: 'c' },
+            { id: 'invert',        label: 'Invert Colors',  defaultKey: 'i' },
+            { id: 'reading-line',  label: 'Toggle Line',    defaultKey: ',' },
+            { id: 'reading-mask',  label: 'Toggle Mask',    defaultKey: '.' },
+            { id: 'auto-follow',   label: 'Auto-Follow',    defaultKey: '/' },
+            { id: 'large-cursor',  label: 'Large Cursor',   defaultKey: 'x' },
+            { id: 'freeze',        label: 'Freeze Frame',   defaultKey: 'f' },
+            { id: 'fullscreen',    label: 'Full Screen',    defaultKey: 'm', toolbarSpanId: 'span-full',   toolbarLabel: 'Full Screen' },
+            { id: 'hide-menu',     label: 'Hide Menu',      defaultKey: 'h', toolbarSpanId: 'span-hide',   toolbarLabel: 'Hide Menu' },
+        ];
+
+        // ----------------------------------------------------------------
+        // Modifier-key support
+        // ----------------------------------------------------------------
+        //
+        // Keys are stored as compound strings:
+        //   bare key           → "c", "+", ","
+        //   with modifiers     → "ctrl+r", "shift+f", "alt+i", "cmd+k"
+        //
+        // Modifier prefix order (canonical): ctrl → alt → shift → cmd
+        // "ctrl" always means the Control key on all platforms.
+        // "cmd"  means Meta (⌘ on Mac, Win key on Windows) — kept separate so
+        //        users can assign cmd+k without it also firing on ctrl+k.
+        //
+        // Modifier-only keypresses (Shift alone, Ctrl alone, etc.) are ignored
+        // during listening — we wait for a real character or special key.
+        // ----------------------------------------------------------------
+
+        // Bare keys that can never be the base of any assignment
+        const BARE_RESERVED = new Set([
+            'tab', 'escape', 'enter', ' ', 'shift', 'control', 'alt', 'meta',
+            'capslock', 'backspace', 'delete',
+            'f1','f2','f3','f4','f5','f6','f7','f8','f9','f10','f11','f12',
+            'w','a','s','d',          // WASD pan — hardcoded non-remappable
+            '0','1','2','3','4','5','6','7','8','9'  // theme selectors
+        ]);
+
+        // Browser-reserved combos that we CANNOT reliably intercept (or whose
+        // interception would cause immediate navigation / OS action before we
+        // even see keydown).  Keys are in canonical compound form.
+        // We block these in the listener and show a user-friendly warning instead.
+        //
+        // The list covers the most common Windows/macOS/Linux browser shortcuts.
+        // Combos prefixed with * mean "both ctrl and cmd variants are blocked".
+        const BROWSER_RESERVED_COMBOS = (() => {
+            const blocked = new Set();
+            // Always blocked regardless of platform
+            const universal = [
+                'ctrl+w', 'ctrl+t', 'ctrl+r', 'ctrl+n', 'ctrl+shift+n',
+                'ctrl+l', 'ctrl+u', 'ctrl+p', 'ctrl+s', 'ctrl+shift+t',
+                'ctrl+tab', 'ctrl+shift+tab',
+                'ctrl+1','ctrl+2','ctrl+3','ctrl+4','ctrl+5',
+                'ctrl+6','ctrl+7','ctrl+8','ctrl+9',
+                'ctrl+shift+j', 'ctrl+shift+i', 'ctrl+shift+c',
+                'ctrl+shift+k', 'ctrl+shift+m',
+                'ctrl+f', 'ctrl+g', 'ctrl+shift+g',
+                'ctrl+h', 'ctrl+j', 'ctrl+k',
+                'ctrl+plus', 'ctrl+-', 'ctrl+0',
+                'ctrl+z', 'ctrl+shift+z', 'ctrl+y',
+                'ctrl+a', 'ctrl+c', 'ctrl+v', 'ctrl+x',
+                'ctrl+b', 'ctrl+i', 'ctrl+e', 'ctrl+d',
+                // macOS Cmd equivalents
+                'cmd+w', 'cmd+t', 'cmd+r', 'cmd+n', 'cmd+shift+n',
+                'cmd+l', 'cmd+u', 'cmd+p', 'cmd+s', 'cmd+shift+t',
+                'cmd+tab', 'cmd+shift+tab',
+                'cmd+1','cmd+2','cmd+3','cmd+4','cmd+5',
+                'cmd+6','cmd+7','cmd+8','cmd+9',
+                'cmd+shift+j', 'cmd+shift+i', 'cmd+shift+c',
+                'cmd+shift+k', 'cmd+shift+m',
+                'cmd+f', 'cmd+g', 'cmd+shift+g',
+                'cmd+h', 'cmd+j', 'cmd+k',
+                'cmd+plus', 'cmd+-', 'cmd+0',
+                'cmd+z', 'cmd+shift+z', 'cmd+y',
+                'cmd+a', 'cmd+c', 'cmd+v', 'cmd+x',
+                'cmd+b', 'cmd+i', 'cmd+e', 'cmd+d',
+                'cmd+q', 'cmd+m', 'cmd+space',
+                // Alt+F4 / Alt combos with letters (many trigger browser menus)
+                'alt+f4', 'alt+left', 'alt+right', 'alt+home',
+            ];
+            universal.forEach(k => blocked.add(k));
+            return blocked;
+        })();
+
+        // Human-readable modifier prefix labels
+        const MOD_LABEL = { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: '⌘ Cmd' };
+
+        // --- Hotkey helpers ---
+
+        // Build canonical compound key string from a KeyboardEvent.
+        // Modifier prefix order: ctrl → alt → shift → cmd
+        // Pure modifier keypresses return null (ignored during listening).
+        function normalizeEventKey(e) {
+            const bareKey = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+            // If the "key" itself is a modifier, we're not ready yet
+            if (['Shift','Control','Alt','Meta'].includes(e.key)) return null;
+
+            const parts = [];
+            if (e.ctrlKey)  parts.push('ctrl');
+            if (e.altKey)   parts.push('alt');
+            if (e.shiftKey && e.key.length !== 1) parts.push('shift'); // shift+char: keep char casing instead
+            if (e.metaKey)  parts.push('cmd');
+            parts.push(bareKey);
+            return parts.join('+');
+        }
+
+        // Pretty-print a stored compound key for display inside <kbd>
+        function displayKey(key) {
+            if (!key) return '';
+            const BARE_MAP = {
+                ' ': 'Space', 'arrowup': '↑', 'arrowdown': '↓',
+                'arrowleft': '←', 'arrowright': '→', '+': '+', '-': '-',
+                ',': ',', '.': '.', '/': '/',
+            };
+            return key.split('+').map((part, i, arr) => {
+                if (i < arr.length - 1) {
+                    // modifier segment
+                    return MOD_LABEL[part] ?? part.charAt(0).toUpperCase() + part.slice(1);
+                }
+                // base key segment
+                return BARE_MAP[part.toLowerCase()] ?? part.toUpperCase();
+            }).join('+');
+        }
+
+        // Return the active key string for an action (custom override or default)
+        function getHotkey(actionId) {
+            return state.customHotkeys[actionId]
+                ?? HOTKEY_REGISTRY.find(h => h.id === actionId)?.defaultKey
+                ?? '';
+        }
+
+        // Reverse-lookup: which actionId owns this compound key string?
+        function getActionForKey(compoundKey) {
+            if (!compoundKey) return null;
+            for (const entry of HOTKEY_REGISTRY) {
+                const current = state.customHotkeys[entry.id] ?? entry.defaultKey;
+                if (current === compoundKey) return entry.id;
+                // Aliases are bare-key only and apply when no custom mapping exists
+                if (!state.customHotkeys[entry.id] && entry.aliases?.includes(compoundKey)) return entry.id;
+            }
+            return null;
+        }
+
+        // Update every <kbd>, card aria-label, and toolbar span to reflect current hotkey state
+        function renderHotkeyCards() {
+            HOTKEY_REGISTRY.forEach(entry => {
+                const isCustom = !!state.customHotkeys[entry.id];
+                const key = isCustom ? state.customHotkeys[entry.id] : entry.defaultKey;
+                const displayed = displayKey(key);
+                const kbdEl = document.querySelector(`kbd[data-action-kbd="${entry.id}"]`);
+                if (kbdEl) {
+                    kbdEl.textContent = displayed;
+                    kbdEl.classList.toggle('remapped', isCustom);
+                }
+                // Keep card aria-label in sync so screen readers announce the current key
+                const card = document.querySelector(`.hotkey-card[data-action="${entry.id}"]`);
+                if (card) {
+                    const customSuffix = isCustom ? ' (custom)' : '';
+                    card.setAttribute('aria-label', `${entry.label}: current key ${displayed}${customSuffix}, press Enter or Space to remap`);
+                }
+                // Update toolbar button labels that embed the key hint
+                if (entry.toolbarSpanId) {
+                    const span = document.getElementById(entry.toolbarSpanId);
+                    if (span) span.textContent = `${entry.toolbarLabel} (${displayed})`;
+                }
+            });
+        }
+
+        // Assign a new compound key to an action, swapping with any conflict
+        function assignHotkey(actionId, newKey) {
+            const conflictId = getActionForKey(newKey);
+            if (conflictId && conflictId !== actionId) {
+                const evictedKey = getHotkey(actionId);
+                state.customHotkeys[conflictId] = evictedKey;
+                showStatus(`Swapped: ${HOTKEY_REGISTRY.find(h=>h.id===conflictId).label} → ${displayKey(evictedKey)}`);
+            }
+            state.customHotkeys[actionId] = newKey;
+            renderHotkeyCards();
+            savePrefs();
+        }
+
+        // --- Execute an action by its registry id ---
+        function dispatchHotkeyAction(actionId, e) {
+            switch (actionId) {
+                case 'zoom-in':      performZoom(1); break;
+                case 'zoom-out':     performZoom(-1); break;
+                case 'hover-pan':    document.getElementById('btn-toggle-hover-pan').click(); break;
+                case 'reset-view':   document.getElementById('btn-reset-view').click(); break;
+                case 'cycle-theme': {
+                    clearTimeout(previewTimeout);
+                    const idx = themes.findIndex(t => t.id === state.activeThemeId);
+                    if (e.shiftKey) applyTheme(themes[(idx - 1 + themes.length) % themes.length].id, false);
+                    else            applyTheme(themes[(idx + 1) % themes.length].id, false);
+                    break;
+                }
+                case 'contrast':      document.getElementById('btn-contrast').click(); break;
+                case 'invert':        document.getElementById('btn-invert').click(); break;
+                case 'reading-line':  document.getElementById('btn-reading-line').click(); break;
+                case 'reading-mask':  document.getElementById('btn-reading-mask').click(); break;
+                case 'auto-follow':
+                    if (document.body.classList.contains('video-active')) {
+                        e.preventDefault();
+                        document.getElementById('btn-reading-auto').click();
+                    }
+                    break;
+                case 'large-cursor': document.getElementById('btn-toggle-cursor').click(); break;
+                case 'freeze':       freezeBtn.click(); break;
+                case 'fullscreen':   toggleFullscreen(); break;
+                case 'hide-menu':    toggleMenu(); break;
+            }
+        }
+
+        // --- Hotkey card click-to-remap UI ---
+        let listeningCard = null;     // the card div currently in listening state
+        let listeningCleanup = null;  // function that cancels the listening session
+
+        function startListening(card) {
+            // Cancel any existing session first
+            if (listeningCleanup) listeningCleanup();
+
+            const actionId = card.dataset.action;
+            const entry = HOTKEY_REGISTRY.find(h => h.id === actionId);
+            listeningCard = card;
+            card.classList.add('listening');
+            card.setAttribute('aria-pressed', 'true');
+            card.setAttribute('aria-label', `${entry.label}: press a key combination to assign, or Escape to cancel`);
+
+            function onKey(e) {
+                // Always intercept during listening — prevents stray keypresses leaking out
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Ignore bare modifier keypresses — wait for the actual key
+                if (['Shift','Control','Alt','Meta'].includes(e.key)) return;
+
+                // Escape cancels without saving
+                if (e.key === 'Escape') { cancel(); return; }
+
+                const key = normalizeEventKey(e);
+
+                // Block bare reserved keys (WASD, digits, Tab, etc.)
+                const bareKey = key.split('+').pop();
+                const hasModifier = key.includes('+');
+                if (!hasModifier && BARE_RESERVED.has(bareKey.toLowerCase())) {
+                    showStatus(`"${displayKey(key)}" can't be reassigned`);
+                    cancel();
+                    return;
+                }
+
+                // Warn about browser-reserved combos.
+                // We've already called preventDefault() so most won't fire —
+                // but some (Ctrl+W, Ctrl+T, Cmd+Q etc.) are intercepted by the
+                // browser before JS even sees them on certain platforms.
+                // We block all known conflicts and show a clear accessible message.
+                if (BROWSER_RESERVED_COMBOS.has(key)) {
+                    // Surface the warning in the status badge (aria-live assertive)
+                    // and also flash the card so the message is spatially anchored.
+                    const kbdEl = document.querySelector(`kbd[data-action-kbd="${card.dataset.action}"]`);
+                    if (kbdEl) {
+                        const orig = kbdEl.textContent;
+                        kbdEl.textContent = '⚠';
+                        setTimeout(() => { kbdEl.textContent = orig; }, 1400);
+                    }
+                    showStatus(`⚠ ${displayKey(key)} is reserved by the browser — choose another key`);
+                    // Stay in listening mode so the user can try again immediately
+                    return;
+                }
+
+                assignHotkey(card.dataset.action, key);
+                showStatus(`${HOTKEY_REGISTRY.find(h=>h.id===card.dataset.action).label} → ${displayKey(key)}`);
+                cancel();
+            }
+
+            // Click anywhere outside the card cancels
+            function onOutsideClick(e) {
+                if (!card.contains(e.target)) cancel();
+            }
+
+            function cancel() {
+                card.classList.remove('listening');
+                card.setAttribute('aria-pressed', 'false');
+                // Restore full descriptive label with the (possibly newly assigned) key
+                const isCustom = !!state.customHotkeys[entry.id];
+                const key = state.customHotkeys[entry.id] ?? entry.defaultKey;
+                const suffix = isCustom ? ' (custom)' : '';
+                card.setAttribute('aria-label', `${entry.label}: current key ${displayKey(key)}${suffix}, press Enter or Space to remap`);
+                document.removeEventListener('keydown', onKey, true);
+                document.removeEventListener('click', onOutsideClick, true);
+                listeningCard = null;
+                listeningCleanup = null;
+            }
+
+            // Use capture phase so we intercept before the main keydown handler
+            document.addEventListener('keydown', onKey, true);
+            // Slight delay so the click that opened the session doesn't immediately close it
+            setTimeout(() => document.addEventListener('click', onOutsideClick, true), 80);
+            listeningCleanup = cancel;
+        }
+
+        function initHotkeyCards() {
+            document.querySelectorAll('.hotkey-card.remappable[data-action]').forEach(card => {
+                card.addEventListener('click', () => {
+                    if (listeningCard === card) {
+                        // Second click cancels
+                        if (listeningCleanup) listeningCleanup();
+                    } else {
+                        startListening(card);
+                    }
+                });
+                card.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        card.click();
+                    }
+                });
+            });
+
+            document.getElementById('btn-reset-hotkeys').addEventListener('click', () => {
+                if (listeningCleanup) listeningCleanup();
+                state.customHotkeys = {};
+                renderHotkeyCards();
+                savePrefs();
+                showStatus('Hotkeys reset to defaults');
+            });
+        }
 
         const defaultThemes = [
             { id: 'nat', name: 'Natural Colors', bg: '#000000', text: '#ffffff', panel: '#1a1a1a', isNat: true },
@@ -1158,9 +2234,21 @@
             isMenuHidden: false, isFrozen: false, isLargeCursorActive: false,
             flipH: false, flipV: false, isMuted: false,
             hoverPan: false, noMemory: false, reduceMotion: false,
+            isScanActive: false,
+            isTtsEnabled: false,
+            ttsUnit: 'sentence',
+            ttsRegion: 'viewport',
+            ttsRate: 1.0,
+            ttsPitch: 1.0,
+            ttsVoiceURI: '',
+            ttsTextScale: 1.0,
+            ocrEngine: 'auto',  // 'auto' | 'native' | 'tesseract'
+            ttsHighlightColor: '#FFD700',
             readingMode: 'none', readingAutoFollow: true, readingY: window.innerHeight / 2,
             readingGap: 150, hideReadingHint: false,
             activeThemeId: defaultThemes[0].id,
+            activeFontId: 'default',  // key into FONT_REGISTRY
+            customHotkeys: {},        // actionId → key string (overrides only; see HOTKEY_REGISTRY)
             lastSessionUrl: ''
         };
 
@@ -1170,13 +2258,115 @@
         let customZoomStep = null; 
         let vdoOrigin = '*';
 
+        // --- Snapshot Pipeline ---
+        // Confirmed working approach from debug log analysis:
+        //   PRIMARY:  { getSnapshotByStreamID: knownStreamID, cib }
+        //             — the only call VDO.Ninja responds to in ?view= mode.
+        //   FALLBACK: { getSnapshotBySlot: 0, cib }
+        //             — used only before knownStreamID is populated (first ~1-2 seconds).
+        //
+        // VDO.Ninja responds: { type: 'frame', frame: '<data:image/png;base64,...>', slot: 0, ... }
+        // knownStreamID is inferred from the 'new-view-connection' message that VDO.Ninja
+        // sends automatically when the WebRTC connection is established.
+        //
+        // `latestFrame` is always the most recent base64 data-URL for VLM/TTS use.
+        // The pipeline is paused while frozen (no point capturing frames not shown).
+        //
+        // Override interval with URL param: ?scaninterval=2000 (milliseconds, min 200).
+        const _scanIntervalParam = parseInt(new URLSearchParams(window.location.search).get('scaninterval'));
+        const SNAPSHOT_INTERVAL_MS = (!isNaN(_scanIntervalParam) && _scanIntervalParam >= 200)
+            ? _scanIntervalParam
+            : 1200;
+
+        // Now that SNAPSHOT_INTERVAL_MS is resolved, log the real init entry
+        dlog('init', { debugMode: DEBUG_MODE, url: window.location.href, scanInterval: SNAPSHOT_INTERVAL_MS });
+
+        let latestFrame = null;
+        let snapshotTimer = null;
+        let knownStreamID = null;   // populated if VDO.Ninja tells us the streamID
+        const freezeOverlay = document.getElementById('freeze-overlay');
+
+        function requestSnapshot() {
+            if (!vdoFrame || !vdoFrame.contentWindow) return;
+            const cib = Date.now();
+
+            if (knownStreamID) {
+                // This is the only call VDO.Ninja responds to in ?view= mode.
+                // Confirmed working by debug log — slot 0, streamID-targeted.
+                vdoFrame.contentWindow.postMessage({ getSnapshotByStreamID: knownStreamID, cib }, '*');
+            } else {
+                // StreamID not yet known — use slot 0 as a fallback until
+                // the new-view-connection message arrives and sets knownStreamID.
+                vdoFrame.contentWindow.postMessage({ getSnapshotBySlot: 0, cib }, '*');
+            }
+
+            dlog('snapshot_request', { cib, knownStreamID });
+        }
+
+        function startSnapshotPipeline() {
+            stopSnapshotPipeline();
+            setTimeout(requestSnapshot, 500);
+            snapshotTimer = setInterval(requestSnapshot, SNAPSHOT_INTERVAL_MS);
+            dlog('snapshot_pipeline', 'started');
+        }
+
+        function stopSnapshotPipeline() {
+            if (snapshotTimer) {
+                clearInterval(snapshotTimer);
+                snapshotTimer = null;
+                dlog('snapshot_pipeline', 'stopped');
+            }
+        }
+
+        // Listen for ALL messages from the VDO.Ninja iframe.
+        // In debug mode, log every message so we can see exactly what VDO.Ninja sends.
+        // Extract frame data from all known response shapes:
+        //   { type: 'frame',  frame: '<dataURL>' }   ← getSnapshotBySlot response
+        //   { type: 'image',  image: '<dataURL>' }   ← getVideoFrame response (some versions)
+        //   { action: 'stream-id', streamID: '...' } ← VDO.Ninja announcing its stream ID
+        window.addEventListener('message', (e) => {
+            if (!e.data || typeof e.data !== 'object') return;
+
+            // Debug: log every inbound message (type + keys, never the full frame data)
+            if (DEBUG_MODE) {
+                const summary = {};
+                for (const k in e.data) {
+                    const v = e.data[k];
+                    summary[k] = (typeof v === 'string' && v.length > 80) ? v.slice(0, 40) + '…[' + v.length + ']' : v;
+                }
+                dlog('msg_in', summary);
+            }
+
+            // Capture stream ID when VDO.Ninja announces it — helps targeted requests
+            if (e.data.action === 'stream-id' && e.data.streamID) {
+                knownStreamID = e.data.streamID;
+                dlog('streamID_learned', knownStreamID);
+            }
+            if (e.data.streamID && !knownStreamID) {
+                knownStreamID = e.data.streamID;
+                dlog('streamID_inferred', knownStreamID);
+            }
+
+            // Extract frame from all known response shapes
+            const frame = e.data.frame || e.data.image || null;
+            if (frame && typeof frame === 'string' && frame.startsWith('data:')) {
+                latestFrame = frame;
+                dlog('snapshot_received', { type: e.data.type, len: frame.length });
+            }
+        });
+
         // Load Memory Safely
         try {
             const savedThemes = localStorage.getItem('vdoMagnifierThemes');
             themes = savedThemes ? JSON.parse(savedThemes) : [...defaultThemes];
 
             const savedPrefs = localStorage.getItem('vdoMagnifierPrefs');
-            if (savedPrefs) Object.assign(state, JSON.parse(savedPrefs));
+            if (savedPrefs) {
+                const parsed = JSON.parse(savedPrefs);
+                Object.assign(state, parsed);
+                // TTS UI elements are wired after the main JS block — defer restore
+                setTimeout(() => restoreTtsPrefs(parsed), 0);
+            }
         } catch (e) {
             themes = [...defaultThemes];
             storageFailed = true;
@@ -1216,6 +2406,7 @@
         const toolbar = document.getElementById('toolbar');
         const zoomOutBtn = document.getElementById('btn-zoom-out');
         const freezeBtn = document.getElementById('btn-freeze');
+        const scanBtn = document.getElementById('btn-scan');
         const readingLine = document.getElementById('reading-line');
         const maskTop = document.getElementById('reading-mask-top');
         const maskBottom = document.getElementById('reading-mask-bottom');
@@ -1449,7 +2640,7 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5"></circle><circle cx="17.5" cy="10.5" r=".5"></circle><circle cx="8.5" cy="7.5" r=".5"></circle><circle cx="6.5" cy="12.5" r=".5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path></svg>
                     <span aria-hidden="true">Create Custom Theme (Shift+9)</span>
                 </button>
-                <div class="toolbar-divider" style="width:100%; height:2px; margin: 5px 0;"></div>
+                <div class="toolbar-divider" role="separator" aria-hidden="true" style="width:100%; height:2px; margin: 5px 0;"></div>
             `;
             extendedThemesMenu.insertAdjacentHTML('beforeend', createCustomBtnHtml);
             document.getElementById('btn-custom-modal-dropdown').addEventListener('click', (e) => openCustomModal(e));
@@ -1743,12 +2934,26 @@
         const bgInputs = ['bg-r', 'bg-g', 'bg-b'].map(id => document.getElementById(id));
 
         function refreshCustomPreview() {
-            const textHex = rgbToHex(textInputs[0].value, textInputs[1].value, textInputs[2].value);
-            const bgHex = rgbToHex(bgInputs[0].value, bgInputs[1].value, bgInputs[2].value);
-            
-            customPreviewBox.style.color = textHex;
+            const tr = parseInt(textInputs[0].value), tg = parseInt(textInputs[1].value), tb = parseInt(textInputs[2].value);
+            const br = parseInt(bgInputs[0].value),   bg = parseInt(bgInputs[1].value),   bb = parseInt(bgInputs[2].value);
+            const textHex = rgbToHex(tr, tg, tb);
+            const bgHex   = rgbToHex(br, bg, bb);
+
+            customPreviewBox.style.color           = textHex;
             customPreviewBox.style.backgroundColor = bgHex;
-            customPreviewBox.style.borderColor = textHex;
+            customPreviewBox.style.borderColor     = textHex;
+            // Update live region text so AT announces the current colour mix
+            customPreviewBox.setAttribute('aria-label', `Color preview: text ${textHex}, background ${bgHex}`);
+
+            // Keep aria-valuenow and visible value spans in sync
+            const ids = ['text-r','text-g','text-b','bg-r','bg-g','bg-b'];
+            ids.forEach(id => {
+                const input = document.getElementById(id);
+                if (!input) return;
+                input.setAttribute('aria-valuenow', input.value);
+                const valSpan = document.getElementById(id + '-val');
+                if (valSpan) valSpan.textContent = input.value;
+            });
         }
 
         [...textInputs, ...bgInputs].forEach(input => input.addEventListener('input', refreshCustomPreview));
@@ -1825,11 +3030,24 @@
                 const btn = document.getElementById('btn-toggle-no-memory');
                 if (btn) btn.classList.add('active-state');
             }
+            // Restore saved font preference (injects the font resource if needed)
+            if (state.activeFontId && state.activeFontId !== 'default') {
+                applyFont(state.activeFontId);
+                const activeEntry = FONT_REGISTRY.find(f => f.id === state.activeFontId);
+                const label = document.getElementById('text-dyslexia-font');
+                if (label && activeEntry) label.textContent = `Font: ${activeEntry.name}`;
+            }
 
             renderAllThemes();
             syncAllIndicators();
             populatePalette('text-palette-grid', true);
             populatePalette('bg-palette-grid', false);
+
+            // Restore custom hotkey assignments from saved state, then wire up card UI
+            if (state.customHotkeys && typeof state.customHotkeys === 'object') {
+                renderHotkeyCards();
+            }
+            initHotkeyCards();
             
             setupAccessibleDropdown('btn-theme-dropdown', 'theme-dropdown-menu');
             setupAccessibleDropdown('btn-extended-themes', 'extended-themes-menu');
@@ -1972,22 +3190,31 @@
                 urlObj.searchParams.set('transparent', 'true');
                 urlObj.searchParams.set('autostart', 'true');
                 urlObj.searchParams.set('controls', '0');
+                // &cleanoutput removes VDO.Ninja's own UI chrome (connection indicators etc.)
+                if (!urlObj.searchParams.has('cleanoutput')) {
+                    urlObj.searchParams.set('cleanoutput', 'true');
+                }
                 if (state.isMuted) urlObj.searchParams.set('muted', 'true'); 
                 
                 vdoOrigin = urlObj.origin;
                 vdoInput.removeAttribute('aria-invalid');
                 vdoFrame.src = urlObj.toString();
+                dlog('video_start', { url: urlObj.toString(), origin: vdoOrigin });
                 
                 document.body.classList.add('video-active');
-                cachedWorkspaceRect = null; // workspace just became visible — dimensions changed
+                cachedWorkspaceRect = null;
                 document.getElementById('setup-screen-wrapper').style.display = 'none';
                 workspace.style.display = 'block';
                 freezeBtn.disabled = false;
+                scanBtn.disabled = false;
 
                 vdoFrame.addEventListener('load', () => {
                     if (state.isMuted && vdoOrigin !== '*') {
                         vdoFrame.contentWindow.postMessage({"muted": true}, vdoOrigin);
                     }
+                    dlog('iframe_load', { src: vdoFrame.src, origin: vdoOrigin });
+                    // Pipeline does NOT auto-start — user must enable "Scan" toggle.
+                    // Freeze on-demand still works without the pipeline running.
                 }, { once: true });
 
                 if (state.isLargeCursorActive) document.body.classList.add('large-cursor-active');
@@ -2020,12 +3247,80 @@
             if (e.key === 'Enter') startBtn.click();
         });
 
-        // NOTE: Safari does not support CSS url() SVG filters on elements containing iframes,
-        // regardless of compositing layer setup or absolute URL resolution tricks. The colour
-        // themes that rely on feColorMatrix (all non-Natural, non-Grayscale themes) will show
-        // video in greyscale only on Safari. grayscale(), contrast(), invert() and saturate()
-        // CSS filters all work correctly. This is a known unresolved WebKit limitation.
-        const SAFARI_SVG_FILTER_UNSUPPORTED = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        // Example stream button — loads a demo VDO.ninja stream directly
+        document.getElementById('btn-example-stream').addEventListener('click', () => {
+            vdoInput.value = 'https://vdo.ninja/?view=ALijGsk';
+            startBtn.click();
+        });
+
+        // Detect whether the browser can apply a CSS url() SVG filter to an element that
+        // contains an iframe.  Safari cannot — it silently drops the filter while all plain
+        // CSS filters (grayscale, contrast, invert, saturate) continue to work.
+        //
+        // Detection strategy: create a tiny off-screen canvas, render a known solid-colour
+        // rect through an SVG feColorMatrix that inverts red/blue, then read back a pixel.
+        // If the pixel is transformed we have working SVG filter support; if it matches the
+        // original colour (or the canvas is tainted / SecurityError) the feature is absent.
+        //
+        // This avoids the fragile UA-string regex (/^((?!chrome|android).)*safari/i) which
+        // breaks whenever browser vendors update their agent strings, and correctly handles
+        // future engines, Chromium-based iOS browsers, and any other edge cases.
+        //
+        // MAINTENANCE NOTE: The SVG filter (#theme-filter / feColorMatrix) is used for all
+        // non-Natural, non-Grayscale colour themes applied to the video iframe.  If this
+        // detection ever gives a wrong result, colour themes will render as greyscale on
+        // affected browsers.  Re-test after major browser engine releases.
+        const SAFARI_SVG_FILTER_UNSUPPORTED = (() => {
+            try {
+                // Build a minimal inline SVG filter in a data URI and apply it to a canvas
+                // element via CSS.  We then draw a red pixel and read it back.
+                const svgNS = 'http://www.w3.org/2000/svg';
+                const svg = document.createElementNS(svgNS, 'svg');
+                svg.setAttribute('xmlns', svgNS);
+                svg.setAttribute('width', '1');
+                svg.setAttribute('height', '1');
+                // feColorMatrix that swaps R and B channels (red in → blue out)
+                svg.innerHTML = `<filter id="f"><feColorMatrix type="matrix"
+                    values="0 0 1 0 0  0 1 0 0 0  1 0 0 0 0  0 0 0 1 0"/></filter>
+                    <rect width="1" height="1" fill="red" filter="url(#f)"/>`;
+                const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
+                const url  = URL.createObjectURL(blob);
+                const img  = new Image();
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 1;
+                const ctx = canvas.getContext('2d');
+
+                // Draw synchronously isn't possible for blob URLs, so fall back to a
+                // secondary heuristic: check the CSS filter property on a real element.
+                // Browsers that support url() SVG filters expose it via computed style.
+                const probe = document.createElement('div');
+                probe.style.cssText = 'position:absolute;width:0;height:0;filter:url(#theme-filter)';
+                document.body.appendChild(probe);
+                const computed = getComputedStyle(probe).filter;
+                document.body.removeChild(probe);
+                URL.revokeObjectURL(url);
+
+                // Chrome/Firefox: computed filter includes "url(...)" — feature present.
+                // Safari: computed filter is "none" even when a url() was set — feature absent.
+                return !computed || computed === 'none' || !computed.includes('url');
+            } catch (e) {
+                // Any error (SecurityError, unsupported API) → assume unsupported to be safe
+                return true;
+            }
+        })();
+        // --- Debounced re-scan when the viewport changes while frozen ---
+        // Fires 600ms after the last pan/zoom, cancels in-progress OCR by clearing
+        // state first so runOcr() immediately supersedes any running recognition.
+        let _rescanTimer = null;
+        function scheduleFrozenRescan() {
+            clearTimeout(_rescanTimer);
+            _rescanTimer = setTimeout(() => {
+                if (!state.isFrozen || !state.isTtsEnabled) return;
+                clearTtsState('<span class="tts-spinner"></span>Re-scanning…');
+                runOcr();
+            }, 600);
+        }
+
         const svgFilterRef = 'url(#theme-filter)';
         function updateVisuals(previewThemeId = null) {
             const isVideoActive = document.body.classList.contains('video-active');
@@ -2041,7 +3336,10 @@
                 state.panY = Math.max(-maxPanY, Math.min(state.panY, maxPanY));
 
                 transformLayer.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.streamScale})`;
-                vdoFrame.style.transform = `scaleX(${state.flipH ? -1 : 1}) scaleY(${state.flipV ? -1 : 1})`;
+                const flipTransform = `scaleX(${state.flipH ? -1 : 1}) scaleY(${state.flipV ? -1 : 1})`;
+                vdoFrame.style.transform = flipTransform;
+                // Overlay must mirror the same flip so frozen frames stay geometrically aligned
+                freezeOverlay.style.transform = flipTransform;
 
                 let wrapperFilter = '';
                 const targetId = previewThemeId || state.activeThemeId;
@@ -2120,6 +3418,14 @@
             // Always update position after a mode/state change, then sync indicators
             applyReadingPosition();
             syncAllIndicators();
+
+            // When frozen with TTS active and the viewport region is used, a pan or
+            // zoom changes which text is visible.  Debounce a re-scan so we don't
+            // re-OCR on every pixel of a drag, only after the user settles.
+            // If OCR is already running we cancel it and restart from the new view.
+            if (state.isFrozen && state.isTtsEnabled && state.ttsRegion === 'viewport') {
+                scheduleFrozenRescan();
+            }
         }
 
         // Lightweight position-only update — safe to call on every mousemove frame.
@@ -2325,26 +3631,75 @@
             }
         }
 
-        function toggleFreeze() {
-            // Guard: only operate when video is active and a safe origin is established
-            if (!document.body.classList.contains('video-active') || vdoOrigin === '*') return;
-            
+        // Keep aria-pressed on the fullscreen button in sync with actual fullscreen state,
+        // including when the user presses Escape to exit fullscreen natively.
+        document.addEventListener('fullscreenchange', () => {
+            const btn = document.getElementById('btn-fullscreen');
+            if (btn) btn.setAttribute('aria-pressed', document.fullscreenElement ? 'true' : 'false');
+            // Also re-sync span label text
+            const span = document.getElementById('span-full');
+            if (span) {
+                const key = displayKey(getHotkey('fullscreen'));
+                span.textContent = `${document.fullscreenElement ? 'Exit' : 'Full Screen'} (${key})`;
+            }
+        });
+
+        function toggleFreeze(onFreshFrame) {
+            if (!document.body.classList.contains('video-active')) return;
+
             state.isFrozen = !state.isFrozen;
+
             if (state.isFrozen) {
-                vdoFrame.contentWindow.postMessage({"pause": true}, vdoOrigin);
-                vdoFrame.contentWindow.postMessage({"action": "pause"}, vdoOrigin);
-                vdoFrame.contentWindow.postMessage("pause", vdoOrigin);
+                if (latestFrame) {
+                    freezeOverlay.style.backgroundImage = `url(${latestFrame})`;
+                    freezeOverlay.classList.add('active');
+                }
+
+                // Use a unique float cib so rapid freeze/unfreeze/refreeze within the
+                // same millisecond doesn't produce colliding cib values.
+                const freezeCib = performance.now() + Math.random();
+                dlog('freeze', { state: 'freezing', placeholderLen: latestFrame?.length ?? null, freshCib: Math.round(freezeCib) });
+
+                let frameConsumed = false;
+                const captureOnDemandFrame = (e) => {
+                    if (!e.data || e.data.type !== 'frame' || !e.data.frame) return;
+                    if (e.data.cib !== freezeCib) return;
+                    if (frameConsumed) return;
+                    frameConsumed = true;
+                    window.removeEventListener('message', captureOnDemandFrame);
+                    latestFrame = e.data.frame;
+                    // Always update the overlay image regardless of frozen state,
+                    // so the latest frame is cached. Only call onFreshFrame if still frozen.
+                    freezeOverlay.style.backgroundImage = `url(${latestFrame})`;
+                    dlog('freeze', { state: 'frozen_fresh_frame', frameLen: latestFrame.length });
+                    if (state.isFrozen) {
+                        freezeOverlay.classList.add('active');
+                        if (typeof onFreshFrame === 'function') onFreshFrame();
+                    }
+                };
+                window.addEventListener('message', captureOnDemandFrame);
+
+                if (knownStreamID) {
+                    vdoFrame.contentWindow.postMessage({ getSnapshotByStreamID: knownStreamID, cib: freezeCib }, '*');
+                } else {
+                    vdoFrame.contentWindow.postMessage({ getSnapshotBySlot: 0, cib: freezeCib }, '*');
+                }
+
+                stopSnapshotPipeline();
                 freezeBtn.classList.add('active-state');
                 freezeBtn.setAttribute('aria-pressed', 'true');
                 freezeBtn.setAttribute('aria-label', 'Unfreeze Frame');
+                document.body.classList.add('is-frozen');
                 showStatus("Frame Frozen");
             } else {
-                vdoFrame.contentWindow.postMessage({"play": true}, vdoOrigin);
-                vdoFrame.contentWindow.postMessage({"action": "play"}, vdoOrigin);
-                vdoFrame.contentWindow.postMessage("play", vdoOrigin);
+                freezeOverlay.classList.remove('active');
+                if (state.isScanActive) startSnapshotPipeline();
+                dlog('freeze', { state: 'unfrozen', scanActive: state.isScanActive });
                 freezeBtn.classList.remove('active-state');
                 freezeBtn.setAttribute('aria-pressed', 'false');
                 freezeBtn.setAttribute('aria-label', 'Freeze Frame');
+                document.body.classList.remove('is-frozen');
+                if (typeof updateClickOverlay === 'function') updateClickOverlay();
                 showStatus("Frame Unfrozen");
             }
             savePrefs();
@@ -2353,7 +3708,8 @@
         // --- Button Listeners ---
         document.getElementById('btn-zoom-in').addEventListener('click', () => performZoom(1));
         zoomOutBtn.addEventListener('click', () => performZoom(-1));
-        freezeBtn.addEventListener('click', toggleFreeze);
+        // freezeBtn click is wired by the TTS engine block below, which wraps
+        // toggleFreeze to also trigger OCR. Don't add a bare listener here.
         document.getElementById('btn-hide').addEventListener('click', toggleMenu);
         document.getElementById('btn-fullscreen').addEventListener('click', () => {
             toggleFullscreen();
@@ -2462,7 +3818,6 @@
             state.reduceMotion = !state.reduceMotion;
             if (state.reduceMotion) {
                 document.body.classList.add('reduce-motion-active');
-                // Stop all running animation loops immediately — snap to current target
                 stopMomentum();
                 stopHoverPanLoop();
                 stopKeyPanLoop();
@@ -2471,6 +3826,41 @@
             }
             syncAllIndicators();
             showStatus(state.reduceMotion ? "Reduce Motion: ON" : "Reduce Motion: OFF");
+        });
+
+        wrapMenuAction('btn-toggle-dyslexia-font', () => {
+            cycleFontNext();
+            const activeEntry = FONT_REGISTRY.find(f => f.id === state.activeFontId);
+            const isDefault = state.activeFontId === 'default';
+            const btn = document.getElementById('btn-toggle-dyslexia-font');
+            const label = document.getElementById('text-dyslexia-font');
+            if (label) label.textContent = isDefault ? 'Dyslexia-Friendly Font' : `Font: ${activeEntry.name}`;
+            if (btn) {
+                btn.setAttribute('aria-pressed', isDefault ? 'false' : 'true');
+                btn.setAttribute('aria-label', isDefault
+                    ? 'Enable dyslexia-friendly font'
+                    : `Active font: ${activeEntry.name}. Activate to cycle to next font`);
+            }
+            showStatus(isDefault ? 'Font: System Default' : `Font: ${activeEntry.name}`);
+        });
+
+        wrapMenuAction('btn-scan', () => {
+            state.isScanActive = !state.isScanActive;
+            if (state.isScanActive) {
+                if (!state.isFrozen) startSnapshotPipeline();
+                scanBtn.classList.add('active-state');
+                scanBtn.setAttribute('aria-pressed', 'true');
+                setIndicator('ind-scan', true);
+                showStatus(`Frame Scanning ON (${SNAPSHOT_INTERVAL_MS}ms)`);
+                dlog('scan', { enabled: true, interval: SNAPSHOT_INTERVAL_MS });
+            } else {
+                stopSnapshotPipeline();
+                scanBtn.classList.remove('active-state');
+                scanBtn.setAttribute('aria-pressed', 'false');
+                setIndicator('ind-scan', false);
+                showStatus('Frame Scanning OFF');
+                dlog('scan', 'disabled');
+            }
         });
 
         wrapMenuAction('btn-reset-view', () => {
@@ -2499,8 +3889,1357 @@
             syncAllIndicators();
         });
 
+        // ================================================================
+        // TTS / OCR ENGINE
+        // ================================================================
+        //
+        // Three-tier progressive OCR:
+        //
+        //   Tier 1 — Native TextDetector (Shape Detection API)
+        //     Zero download, OS-level quality (Apple Vision / Google ML Kit).
+        //     Chromium on macOS/Windows/Android only. No word bounding boxes.
+        //     Auto-selected when available unless user overrides.
+        //
+        //   Tier 2 — Tesseract.js v5
+        //     Cross-platform, ~10MB CDN download, word-level bounding boxes.
+        //     Used on Firefox, Safari, and as fallback when Native unavailable.
+        //
+        // state.ocrEngine: 'auto' | 'native' | 'tesseract'
+        //   'auto'      → use Native if available, else Tesseract
+        //   'native'    → always use Native (radio hidden if unavailable)
+        //   'tesseract' → always use Tesseract
+        //
+        // State lifecycle:
+        //   freeze  → runOcr() → engine-specific recognise → units → auto-play
+        //   unfreeze / region change → clearTtsState() → ready
+
+        // --- TTS DOM refs ---
+        const ttsBar          = document.getElementById('tts-bar');
+        const ttsSettingsPanel= document.getElementById('tts-settings-panel');
+        const btnTtsPlay      = document.getElementById('btn-tts-playpause');
+        const btnTtsPrev      = document.getElementById('btn-tts-prev');
+        const btnTtsNext      = document.getElementById('btn-tts-next');
+        const btnTtsSettings  = document.getElementById('btn-tts-settings');
+        const ttsStatusLabel  = document.getElementById('tts-status-label');
+        const ttsOcrStatus    = document.getElementById('tts-ocr-status');
+        const ttsWordHighlight= document.getElementById('tts-word-highlight');
+        const ttsVoiceSelect  = document.getElementById('tts-voice-select');
+        const ttsRateSlider   = document.getElementById('tts-rate-slider');
+        const ttsPitchSlider  = document.getElementById('tts-pitch-slider');
+        const ttsRateLabel    = document.getElementById('tts-rate-label');
+        const ttsPitchLabel   = document.getElementById('tts-pitch-label');
+
+        // --- TTS runtime state ---
+        let tesseractWorker   = null;
+        let tesseractReady    = false;
+        let tesseractLoading  = false;
+        let ocrWords          = [];     // [{text,x0,y0,x1,y1}] — empty when Native engine used
+        let ocrCropInfo       = null;   // {srcX,srcY,srcW,srcH,ocrW,ocrH,frameW,frameH}
+        let ttsUnits          = [];
+        let ttsUnitIndex      = 0;
+        let ttsIsPlaying      = false;
+        let ttsWordMap        = [];
+        let currentUtterance  = null;
+
+        // ----------------------------------------------------------------
+        // Tier 1: Native TextDetector
+        // ----------------------------------------------------------------
+        // TextDetector requires a secure context (HTTPS or localhost).
+        // It is not available from file:// — hide the option in that case.
+        const NATIVE_OCR_SUPPORTED = ('TextDetector' in window) &&
+            (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+
+        function initNativeEngineUI() {
+            const nativeLabel = document.getElementById('ocr-engine-native-label');
+            if (!nativeLabel) return;
+            if (NATIVE_OCR_SUPPORTED) {
+                nativeLabel.style.display = '';
+                // Auto-select native if engine pref is auto or native
+                if (state.ocrEngine === 'auto' || state.ocrEngine === 'native') {
+                    nativeLabel.querySelector('input[type=radio]').checked = true;
+                    state.ocrEngine = 'native';
+                    ttsOcrStatus.textContent = 'OCR engine: Native ⚡ (OS-level)';
+                }
+            } else {
+                // Native unavailable — fall back to Tesseract silently
+                if (state.ocrEngine === 'native' || state.ocrEngine === 'auto') {
+                    state.ocrEngine = 'tesseract';
+                    const r = document.querySelector('input[name="ocr-engine"][value="tesseract"]');
+                    if (r) r.checked = true;
+                }
+            }
+        }
+
+        // Run Native TextDetector on a canvas.
+        // Returns { text, words: [] } — Native gives block-level bounding boxes,
+        // not word-level, so word highlighting is disabled for this engine.
+        async function runNativeOcr(canvas) {
+            const detector = new TextDetector();
+            const results  = await detector.detect(canvas);
+            // Sort top→bottom, then left→right within each line band
+            results.sort((a, b) => {
+                const dy = a.boundingBox.top - b.boundingBox.top;
+                return Math.abs(dy) > 20 ? dy : a.boundingBox.left - b.boundingBox.left;
+            });
+            const text = results.map(r => r.rawValue).join('\n');
+            return { text, words: [] };
+        }
+
+        // ----------------------------------------------------------------
+        // Tier 2: Tesseract.js v5
+        // ----------------------------------------------------------------
+        function loadTesseract() {
+            if (tesseractReady || tesseractLoading) return Promise.resolve();
+            tesseractLoading = true;
+            updateTtsControls();
+            ttsOcrStatus.innerHTML = '<span class="tts-spinner"></span>Loading OCR engine…';
+            dlog('tesseract', 'loading');
+
+            const T_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/';
+            const C_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v5.0.0';
+            const L_CDN = 'https://tessdata.projectnaptha.com/4.0.0';
+
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = T_CDN + 'tesseract.min.js';
+
+                script.onload = async () => {
+                    try {
+                        ttsOcrStatus.innerHTML = '<span class="tts-spinner"></span>Fetching worker…';
+                        const workerText = await fetch(T_CDN + 'worker.min.js')
+                            .then(r => { if (!r.ok) throw new Error(`Worker fetch ${r.status}`); return r.text(); });
+                        const workerBlobURL = URL.createObjectURL(
+                            new Blob([workerText], { type: 'application/javascript' })
+                        );
+
+                        ttsOcrStatus.innerHTML = '<span class="tts-spinner"></span>Initialising OCR engine…';
+                        tesseractWorker = await Tesseract.createWorker('eng', 1, {
+                            workerPath:    workerBlobURL,
+                            corePath:      C_CDN,
+                            langPath:      L_CDN,
+                            workerBlobURL: false,
+                            logger: (m) => {
+                                if (m.status === 'loading tesseract core' ||
+                                    m.status === 'loading language traineddata') {
+                                    ttsOcrStatus.innerHTML = `<span class="tts-spinner"></span>${m.status}…`;
+                                }
+                                dlog('tesseract_progress', { status: m.status, progress: m.progress });
+                            }
+                        });
+                        URL.revokeObjectURL(workerBlobURL);
+
+                        // PSM 1: auto page segmentation with OSD — better than default PSM 3
+                        // for screen captures which may have mixed orientations.
+                        // preserve_interword_spaces keeps multi-word gaps intact.
+                        await tesseractWorker.setParameters({
+                            tessedit_pageseg_mode: Tesseract.PSM.AUTO_OSD,
+                            preserve_interword_spaces: '1',
+                        });
+
+                        tesseractReady   = true;
+                        tesseractLoading = false;
+                        ttsOcrStatus.textContent = 'OCR engine: Tesseract.js v5 ✓';
+                        dlog('tesseract', 'ready');
+                        updateTtsControls();
+                        resolve();
+                    } catch(err) {
+                        tesseractLoading = false;
+                        const msg = err instanceof Error ? err.message : String(err);
+                        ttsOcrStatus.textContent = `OCR engine: failed — ${msg}`;
+                        dlog('tesseract', { error: msg });
+                        updateTtsControls();
+                        reject(err);
+                    }
+                };
+
+                script.onerror = () => {
+                    tesseractLoading = false;
+                    ttsOcrStatus.textContent = 'OCR engine: CDN unreachable — check internet connection';
+                    dlog('tesseract', { error: 'script load failed' });
+                    updateTtsControls();
+                    reject(new Error('Tesseract CDN load failed'));
+                };
+
+                document.head.appendChild(script);
+            });
+        }
+
+        // --- Build a greyscale+binarised canvas from the correct region ---
+        // Returns a data object used both as ocrCropInfo and as the canvas source for Tesseract.
+        //
+        // Viewport region math:
+        //   The frame (frameW×frameH) is displayed inside the overlay (overlayW×overlayH)
+        //   with letterboxing (object-fit:contain equivalent).  The CSS transform on
+        //   transform-layer is translate(panX,panY) scale(streamScale), applied around the
+        //   overlay centre.  To find which frame pixels are visible we:
+        //   1. Compute where the video rectangle sits inside the overlay (letterbox offsets).
+        //   2. Invert the pan/scale transform to find the visible slice of the video rect
+        //      in overlay-local coords (at scale=1).
+        //   3. Map that slice back to frame pixel coords.
+        function buildOcrCanvas(frameDataUrl) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const frameW = img.naturalWidth;
+                    const frameH = img.naturalHeight;
+
+                    let srcX = 0, srcY = 0, srcW = frameW, srcH = frameH;
+
+                    if (state.ttsRegion === 'viewport') {
+                        // Overlay dimensions at scale=1 (offsetWidth/Height, not getBCR)
+                        const overlayW = transformLayer.offsetWidth  || workspace.clientWidth;
+                        const overlayH = transformLayer.offsetHeight || workspace.clientHeight;
+
+                        // Letterbox geometry — reuses the same helper as the highlight pipeline
+                        const lb = computeLetterbox(img.naturalWidth, img.naturalHeight, overlayW, overlayH);
+                        const { vidLeft, vidTop, vidW, vidH } = lb;
+
+                        // The transform-layer CSS transform is:
+                        //   translate(panX, panY) scale(streamScale)
+                        // around the overlay centre (overlayW/2, overlayH/2).
+                        // A point p_overlay in overlay coords maps to screen coords as:
+                        //   p_screen = centre + (p_overlay - centre + pan) * scale
+                        // Inverting — for a screen-space point p_screen, overlay coord is:
+                        //   p_overlay = centre + (p_screen - centre) / scale - pan / scale
+                        //
+                        // The visible screen rect is (0,0)→(overlayW,overlayH).
+                        // Map its corners to overlay (unscaled) coords:
+                        const scale = state.streamScale;
+                        const cx = overlayW / 2;
+                        const cy = overlayH / 2;
+
+                        // Overlay-local coords of the visible screen edges
+                        const visLeft   = cx + (0        - cx) / scale - state.panX / scale;
+                        const visTop    = cy + (0        - cy) / scale - state.panY / scale;
+                        const visRight  = cx + (overlayW - cx) / scale - state.panX / scale;
+                        const visBottom = cy + (overlayH - cy) / scale - state.panY / scale;
+
+                        // Map from overlay coords to frame pixel coords via the video rect
+                        const vidToFrameX = (ox) => (ox - vidLeft) / vidW * frameW;
+                        const vidToFrameY = (oy) => (oy - vidTop)  / vidH * frameH;
+
+                        const fx0 = vidToFrameX(visLeft);
+                        const fy0 = vidToFrameY(visTop);
+                        const fx1 = vidToFrameX(visRight);
+                        const fy1 = vidToFrameY(visBottom);
+
+                        srcX = Math.max(0, Math.round(fx0));
+                        srcY = Math.max(0, Math.round(fy0));
+                        const srcX2 = Math.min(frameW, Math.round(fx1));
+                        const srcY2 = Math.min(frameH, Math.round(fy1));
+                        srcW = Math.max(1, srcX2 - srcX);
+                        srcH = Math.max(1, srcY2 - srcY);
+
+                        dlog('ocr_viewport_crop', { overlayW, overlayH, vidLeft, vidTop, vidW, vidH, visLeft, visTop, visRight, visBottom, srcX, srcY, srcW, srcH });
+                    }
+
+                    // Do NOT downscale — send Tesseract the full-resolution crop.
+                    // The 3600px source already yields a ~1800px crop at 2× zoom, and
+                    // Tesseract performs best with the original pixel density.
+                    // Only cap at 4000px wide to avoid OOM on extreme cases.
+                    const MAX_OCR_W = 4000;
+                    const ocrScale = srcW > MAX_OCR_W ? MAX_OCR_W / srcW : 1;
+                    const ocrW = Math.round(srcW * ocrScale);
+                    const ocrH = Math.round(srcH * ocrScale);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width  = ocrW;
+                    canvas.height = ocrH;
+                    const ctx = canvas.getContext('2d');
+
+                    ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, ocrW, ocrH);
+
+                    // ---- Image preprocessing for Tesseract ----
+                    //
+                    // Strategy: greyscale → percentile contrast stretch → send as greyscale.
+                    //
+                    // We deliberately do NOT hard-binarise.  Tesseract runs its own adaptive
+                    // thresholding (Otsu + local) internally and performs better with a rich
+                    // greyscale signal than with a pre-binarised image — especially on complex
+                    // backgrounds like "white text over dark photo" where a single global
+                    // Otsu threshold fragments letterforms.
+                    //
+                    // Instead we normalise the tonal range so Tesseract's internal thresholder
+                    // always sees good foreground/background separation regardless of the source.
+
+                    const imgData = ctx.getImageData(0, 0, ocrW, ocrH);
+                    const d = imgData.data;
+
+                    // Pass 1: greyscale, accumulate histogram for contrast stretch
+                    const hist2 = new Uint32Array(256);
+                    for (let i = 0; i < d.length; i += 4) {
+                        const g = Math.round(0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]);
+                        d[i] = d[i+1] = d[i+2] = g;
+                        hist2[g]++;
+                    }
+
+                    // Pass 2: percentile contrast stretch (clip 1% of pixels each end)
+                    // This prevents a single bright/dark outlier from collapsing the range.
+                    const totalPx = ocrW * ocrH;
+                    const clipCount = Math.max(1, Math.round(totalPx * 0.01));
+                    let lo = 0, loAcc = 0;
+                    while (lo < 255 && (loAcc += hist2[lo]) < clipCount) lo++;
+                    let hi = 255, hiAcc = 0;
+                    while (hi > 0   && (hiAcc += hist2[hi]) < clipCount) hi--;
+                    if (hi <= lo) { lo = 0; hi = 255; } // degenerate image — skip stretch
+                    const rangeVal = (hi - lo) || 1;
+
+                    for (let i = 0; i < d.length; i += 4) {
+                        const v = Math.min(255, Math.max(0, Math.round((d[i] - lo) / rangeVal * 255)));
+                        d[i] = d[i+1] = d[i+2] = v;
+                    }
+                    ctx.putImageData(imgData, 0, 0);
+
+                    // Pass 3: unsharp mask at high effective zoom (source pixels become
+                    // large and soft — sharpening helps Tesseract find glyph edges).
+                    // Run after greyscale+stretch so we sharpen the normalised signal.
+                    const effectiveScale = state.streamScale * (srcW / (ocrW || 1));
+                    if (effectiveScale >= 5) {
+                        const blurC = document.createElement('canvas');
+                        blurC.width  = Math.max(1, ocrW >> 2);
+                        blurC.height = Math.max(1, ocrH >> 2);
+                        const bCtx = blurC.getContext('2d');
+                        bCtx.filter = 'blur(1px)';
+                        bCtx.drawImage(canvas, 0, 0, blurC.width, blurC.height);
+                        const blurFull = document.createElement('canvas');
+                        blurFull.width = ocrW; blurFull.height = ocrH;
+                        blurFull.getContext('2d').drawImage(blurC, 0, 0, ocrW, ocrH);
+                        const blurData  = blurFull.getContext('2d').getImageData(0, 0, ocrW, ocrH).data;
+                        const sharp     = ctx.getImageData(0, 0, ocrW, ocrH);
+                        const sd        = sharp.data;
+                        const AMT       = 1.8;
+                        for (let i = 0; i < sd.length; i += 4) {
+                            for (let c = 0; c < 3; c++) {
+                                sd[i+c] = Math.min(255, Math.max(0,
+                                    Math.round(sd[i+c] + AMT * (sd[i+c] - blurData[i+c]))
+                                ));
+                            }
+                        }
+                        ctx.putImageData(sharp, 0, 0);
+                        dlog('ocr_sharpen', { effectiveScale: effectiveScale.toFixed(1) });
+                    }
+
+                    dlog('ocr_preprocess', { lo, hi, ocrW, ocrH });
+                    resolve({ canvas, srcX, srcY, srcW, srcH, ocrW, ocrH, frameW, frameH });
+                };
+                img.src = frameDataUrl;
+            });
+        }
+
+        // --- Clear all TTS result state (OCR output, units, highlight) ---
+        // Called on unfreeze, region change, or any other event that invalidates results.
+        function clearTtsState(statusText = 'Ready') {
+            stopKeepalive();
+            window.speechSynthesis.cancel();
+            ttsIsPlaying = false;
+            ttsUnits = [];
+            ttsUnitIndex = 0;
+            ocrWords = [];
+            ocrCropInfo = null;
+            ttsWordMap = [];
+            hideWordHighlight();
+            setTtsStatus(statusText);
+            updateTtsControls();
+            if (typeof updateClickOverlay === 'function') updateClickOverlay();
+            if (typeof renderTtsTextPanel === 'function') renderTtsTextPanel();
+        }
+
+        // --- Run OCR on latestFrame — dispatches to Native or Tesseract ---
+        async function runOcr() {
+            if (!latestFrame) {
+                setTtsStatus('Freeze a frame first');
+                return;
+            }
+
+            window.speechSynthesis.cancel();
+            ttsIsPlaying = false;
+            hideWordHighlight();
+            ocrWords = [];
+            ttsUnits = [];
+            ttsUnitIndex = 0;
+            ocrCropInfo = null;
+
+            // Resolve which engine to use
+            const useNative = (state.ocrEngine === 'native') ||
+                              (state.ocrEngine === 'auto' && NATIVE_OCR_SUPPORTED);
+
+            setTtsStatus(`<span class="tts-spinner"></span>${useNative ? 'Reading…' : 'Running OCR…'}`);
+            updateTtsControls();
+
+            try {
+                const ocrData = await buildOcrCanvas(latestFrame);
+                ocrCropInfo = ocrData;
+                dlog('ocr_start', {
+                    engine: useNative ? 'native' : 'tesseract',
+                    srcX: ocrData.srcX, srcY: ocrData.srcY,
+                    srcW: ocrData.srcW, srcH: ocrData.srcH,
+                    ocrW: ocrData.ocrW, ocrH: ocrData.ocrH,
+                });
+
+                let text, words;
+                if (useNative) {
+                    ({ text, words } = await runNativeOcr(ocrData.canvas));
+                } else {
+                    ({ text, words } = await runTesseractOcr(ocrData.canvas));
+                    // Clean Tesseract output — remove symbol-garbage lines that
+                    // arise from photographic backgrounds and non-text regions.
+                    // Native engine returns clean strings from the OS, so skip this.
+                    text = cleanOcrText(text);
+                    // Filter ocrWords to only those whose text survived cleaning
+                    // (cheap: just check if the word has ≥2 alphanumeric chars)
+                    words = words.filter(w => /[a-zA-Z0-9]{2,}/.test(w.text));
+                }
+
+                dlog('ocr_done', { engine: useNative ? 'native' : 'tesseract', chars: text.length, words: words.length });
+
+                if (!text) {
+                    setTtsStatus('No text detected');
+                    updateTtsControls();
+                    return;
+                }
+
+                ocrWords = words; // empty array for Native — word highlight disabled
+                ttsUnits = splitIntoUnits(text, state.ttsUnit);
+                ttsUnitIndex = 0;
+                setTtsStatus(`${ttsUnits.length} ${state.ttsUnit}${ttsUnits.length !== 1 ? 's' : ''} found`);
+                renderTtsTextPanel();
+                updateTtsControls();
+                updateClickOverlay();
+                speakUnit(0);
+
+            } catch(err) {
+                setTtsStatus('OCR failed — see console');
+                console.error('[VDOMag OCR]', err);
+                dlog('ocr_error', err?.message ?? String(err));
+                updateTtsControls();
+            }
+        }
+
+        // --- Clean raw OCR output before splitting into units ---
+        // Tesseract frequently hallucinates garbage on image regions that contain
+        // no text (photo backgrounds, gradients, icons).  These appear as lines of
+        // symbols, isolated punctuation, or very short fragments with few real letters.
+        //
+        // Strategy:
+        //   1. Split into lines and score each by alphanumeric density.
+        //   2. Drop lines where <35% of non-whitespace characters are alphanumeric.
+        //   3. Drop lines that contain no complete word (≥2 consecutive letters/digits).
+        //   4. Join surviving lines, collapse excess whitespace, trim.
+        function cleanOcrText(raw) {
+            const lines = raw.split('\n');
+            const cleaned = lines.filter(line => {
+                const stripped = line.replace(/\s/g, '');
+                if (!stripped) return false;                          // blank line
+
+                // Must have at least one real word (run of ≥2 alphanumeric chars)
+                if (!/[a-zA-Z0-9]{2,}/.test(line)) return false;
+
+                // Alphanumeric density — reject symbol-heavy garbage
+                const alphaNum = (stripped.match(/[a-zA-Z0-9]/g) || []).length;
+                const density  = alphaNum / stripped.length;
+                if (density < 0.35) return false;
+
+                return true;
+            });
+
+            return cleaned.join(' ').replace(/\s{2,}/g, ' ').trim();
+        }
+
+        // --- Split text into reading units ---
+        function splitIntoUnits(text, unit) {
+            if (unit === 'word') {
+                return text.split(/\s+/).filter(w => w.length > 0);
+            }
+            if (unit === 'paragraph') {
+                return text.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length > 0);
+            }
+            // sentence (default) — split on .!? followed by whitespace or end
+            return text.match(/[^.!?]+[.!?]*(\s|$)/g)
+                       ?.map(s => s.trim()).filter(s => s.length > 1) ?? [text];
+        }
+
+        // Chrome/Chromium bug: speechSynthesis silently stops firing boundary events and
+        // halts audio on utterances longer than ~15 seconds.  Workaround: every 10 seconds
+        // while speaking, call pause()+resume() to reset the internal timer.  This is
+        // imperceptible to the listener but prevents the stall on long paragraphs.
+        //
+        // Improvement over the naive setInterval approach: the keepalive is suspended
+        // whenever the page is hidden (tab switched, minimised) and resumed when the page
+        // becomes visible again.  This prevents the pause()+resume() calls from firing into
+        // a backgrounded synthesis engine, which can cause audio glitches or double-play
+        // on some browsers when the tab is foregrounded again.
+        let _ttsKeepaliveTimer = null;
+
+        function startKeepalive() {
+            clearInterval(_ttsKeepaliveTimer);
+            _ttsKeepaliveTimer = setInterval(() => {
+                // Guard: only fire if the page is visible and synthesis is actively speaking.
+                // document.hidden is false when the tab is in the foreground.
+                if (!document.hidden && ttsIsPlaying && window.speechSynthesis.speaking) {
+                    window.speechSynthesis.pause();
+                    window.speechSynthesis.resume();
+                }
+            }, 10000);
+        }
+
+        function stopKeepalive() {
+            clearInterval(_ttsKeepaliveTimer);
+            _ttsKeepaliveTimer = null;
+        }
+
+        // Visibility change handler — suspends/resumes synthesis and the keepalive
+        // whenever the user switches away from and back to this tab.
+        //
+        // On hide:  pause synthesis (prevents audio continuing inaudibly in background)
+        //           and stop the keepalive interval so it can't fire blind.
+        // On show:  if TTS was playing when we hid, resume synthesis and restart keepalive.
+        //
+        // Note: some browsers (especially mobile) may cancel the utterance entirely when
+        // the page is hidden regardless of our pause() call.  In that case `speaking` will
+        // be false on show and we leave synthesis stopped — the user can press Play again.
+        let _ttsWasPlayingBeforeHide = false;
+        document.addEventListener('visibilitychange', () => {
+            if (!state.isTtsEnabled) return;
+
+            if (document.hidden) {
+                _ttsWasPlayingBeforeHide = ttsIsPlaying && window.speechSynthesis.speaking;
+                if (_ttsWasPlayingBeforeHide) {
+                    window.speechSynthesis.pause();
+                    stopKeepalive();
+                    dlog('tts_visibility', 'hidden — synthesis paused');
+                }
+            } else {
+                // Page became visible again
+                if (_ttsWasPlayingBeforeHide && ttsIsPlaying) {
+                    // Only resume if synthesis is still queued (not cancelled by the browser)
+                    if (window.speechSynthesis.paused) {
+                        window.speechSynthesis.resume();
+                        startKeepalive();
+                        dlog('tts_visibility', 'visible — synthesis resumed');
+                    } else if (!window.speechSynthesis.speaking) {
+                        // Browser cancelled the utterance while hidden — re-speak current unit
+                        dlog('tts_visibility', 'visible — utterance lost, re-speaking');
+                        speakUnit(ttsUnitIndex);
+                    }
+                }
+                _ttsWasPlayingBeforeHide = false;
+            }
+        });
+
+        // --- Speak a single unit by index ---
+        function speakUnit(idx) {
+            if (idx < 0 || idx >= ttsUnits.length) {
+                stopTts();
+                return;
+            }
+            ttsUnitIndex = idx;
+            const text = ttsUnits[idx];
+
+            stopKeepalive();
+            window.speechSynthesis.cancel();
+            hideWordHighlight();
+
+            const utt = new SpeechSynthesisUtterance(text);
+            utt.rate  = state.ttsRate;
+            utt.pitch = state.ttsPitch;
+
+            const voices = window.speechSynthesis.getVoices();
+            const voice = voices.find(v => v.voiceURI === state.ttsVoiceURI);
+            if (voice) utt.voice = voice;
+
+            // Build word→charIndex map so boundary events can look up bounding boxes
+            ttsWordMap = buildWordMap(text);
+            // Reset sequential OCR word search at the start of each new unit
+            ocrWordSearchStart = 0;
+
+            utt.onboundary = (e) => {
+                if (e.name !== 'word') return;
+                const entry = ttsWordMap.find(m => e.charIndex >= m.charStart && e.charIndex < m.charEnd);
+                if (!entry) return;
+                const ocrWord = findOcrWord(entry.text, entry.wordIdx);
+                if (ocrWord) positionWordHighlight(ocrWord);
+            };
+
+            utt.onend = () => {
+                stopKeepalive();
+                hideWordHighlight();
+                if (!ttsIsPlaying) return;
+                const next = ttsUnitIndex + 1;
+                if (next < ttsUnits.length) {
+                    speakUnit(next);
+                } else {
+                    stopTts();
+                }
+            };
+
+            utt.onerror = (e) => {
+                stopKeepalive();
+                if (e.error === 'interrupted') return; // user cancelled — expected
+                dlog('tts_error', e.error);
+                setTtsStatus('Speech error: ' + e.error);
+            };
+
+            currentUtterance = utt;
+            ttsIsPlaying = true;
+            window.speechSynthesis.speak(utt);
+            startKeepalive();
+            setTtsStatus(`${idx + 1} / ${ttsUnits.length}`);
+            updateTtsControls();
+            updateTtsTextPanelActive();
+        }
+
+        // --- Build word→charIndex map for boundary event matching ---
+        function buildWordMap(text) {
+            const map = [];
+            const re = /\S+/g;
+            let m, i = 0;
+            while ((m = re.exec(text)) !== null) {
+                map.push({
+                    wordIdx: i++,
+                    text: m[0].replace(/[^a-zA-Z0-9]/g, ''),
+                    charStart: m.index,
+                    charEnd: m.index + m[0].length
+                });
+            }
+            return map;
+        }
+
+        // --- Find the nth matching word in ocrWords (sequential to handle duplicates) ---
+        //
+        // Primary strategy: exact clean-text match, scanning forward from ocrWordSearchStart.
+        // This naturally handles repeated words in order.
+        //
+        // Desync recovery: if no exact match is found in the next LOOKAHEAD words, two
+        // fallbacks fire in sequence:
+        //   1. Fuzzy match — accept any word within ±1 character length of the target
+        //      in the same lookahead window (handles OCR/TTS normalisation differences)
+        //   2. Full restart — search from the top of ocrWords, recovering from any drift
+        //      caused by skipped punctuation tokens or garbage Tesseract strings
+        let ocrWordSearchStart = 0;
+        const WORD_LOOKAHEAD = 5; // how many positions ahead we scan before giving up
+        function findOcrWord(text, wordIdx) {
+            if (wordIdx === 0) ocrWordSearchStart = 0;
+            const clean = text.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!clean) return null;
+
+            // Window: from current pointer up to LOOKAHEAD positions beyond it
+            const windowEnd = Math.min(ocrWords.length, ocrWordSearchStart + WORD_LOOKAHEAD);
+
+            // Pass 1: exact match within lookahead window
+            for (let i = ocrWordSearchStart; i < windowEnd; i++) {
+                const w = ocrWords[i].text.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (w === clean) {
+                    ocrWordSearchStart = i + 1;
+                    return ocrWords[i];
+                }
+            }
+
+            // Pass 2: fuzzy match within window — accept ±1 char length difference
+            // (catches OCR inserting/dropping a character, or TTS contracting punctuation)
+            for (let i = ocrWordSearchStart; i < windowEnd; i++) {
+                const w = ocrWords[i].text.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (Math.abs(w.length - clean.length) <= 1 && w.length > 2) {
+                    dlog('tts_fuzzy_match', { tts: clean, ocr: w, idx: i });
+                    ocrWordSearchStart = i + 1;
+                    return ocrWords[i];
+                }
+            }
+
+            // Pass 3: full-array restart — recover from any accumulated drift
+            for (let i = 0; i < ocrWords.length; i++) {
+                const w = ocrWords[i].text.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (w === clean) {
+                    dlog('tts_desync_recovery', { tts: clean, resetTo: i });
+                    ocrWordSearchStart = i + 1;
+                    return ocrWords[i];
+                }
+            }
+
+            return null; // word genuinely not in OCR output — skip highlight
+        }
+
+        // --- Map an OCR bounding box to overlay-relative % coordinates ---
+        //
+        // #tts-word-highlight lives inside #transform-layer.
+        // #transform-layer has CSS: translate(panX,panY) scale(streamScale)
+        // That transform is already applied by the browser — so we must position
+        // the highlight in the *un-transformed* coordinate space of the overlay
+        // (i.e. as if scale=1, pan=0).  The CSS transform then zooms/pans it for free.
+        //
+        // The overlay is position:absolute inset:0 and fills transform-layer exactly.
+        // Video content inside the iframe is letterboxed (object-fit:contain style)
+        // centred within the overlay.  We account for that letterboxing, then express
+        // the result as percentage values so it works at any overlay size.
+        // ----------------------------------------------------------------
+        // Coordinate mapping helpers
+        // ----------------------------------------------------------------
+        // These pure functions each handle one conceptual step in the
+        // ocrCanvas → screen-overlay pipeline.  They are also reused by
+        // the click-to-jump handler in ttsClickOverlay, keeping both paths
+        // in sync automatically.
+        //
+        // Pipeline overview:
+        //   ocrCanvasPx  →[ocrToFrame]→  fullFramePx
+        //                →[applyFlip]→   fullFramePx (flipped)
+        //                →[frameToFraction]→  fraction [0..1]
+        //                →[computeLetterbox]→  {vidLeft,vidTop,vidW,vidH}
+        //                →[fractionToOverlayPct]→  {left,top,w,h} in %
+        // ----------------------------------------------------------------
+
+        /**
+         * Map a rectangle from ocrCanvas pixel space to full-frame pixel space.
+         * @param {{x0,y0,x1,y1}} rect  — bounding box in ocrCanvas px
+         * @param {{srcX,srcY,srcW,srcH,ocrW,ocrH}} crop — from ocrCropInfo
+         * @returns {{fx0,fy0,fx1,fy1}}  — in full-frame px
+         */
+        function ocrRectToFrame(rect, crop) {
+            const { srcX, srcY, srcW, srcH, ocrW, ocrH } = crop;
+            return {
+                fx0: srcX + rect.x0 / ocrW * srcW,
+                fy0: srcY + rect.y0 / ocrH * srcH,
+                fx1: srcX + rect.x1 / ocrW * srcW,
+                fy1: srcY + rect.y1 / ocrH * srcH,
+            };
+        }
+
+        /**
+         * Apply horizontal / vertical flip in full-frame pixel space.
+         * @param {{fx0,fy0,fx1,fy1}} r   — full-frame px rect
+         * @param {number} frameW
+         * @param {number} frameH
+         * @param {boolean} flipH
+         * @param {boolean} flipV
+         * @returns {{fx0,fy0,fx1,fy1}}
+         */
+        function applyFrameFlip(r, frameW, frameH, flipH, flipV) {
+            let { fx0, fy0, fx1, fy1 } = r;
+            if (flipH) { [fx0, fx1] = [frameW - fx1, frameW - fx0]; }
+            if (flipV) { [fy0, fy1] = [frameH - fy1, frameH - fy0]; }
+            return { fx0, fy0, fx1, fy1 };
+        }
+
+        /**
+         * Convert a full-frame px rect to normalised fractions [0..1].
+         * @param {{fx0,fy0,fx1,fy1}} r
+         * @param {number} frameW
+         * @param {number} frameH
+         * @returns {{rx0,ry0,rx1,ry1}}
+         */
+        function frameRectToFraction(r, frameW, frameH) {
+            return {
+                rx0: r.fx0 / frameW,
+                ry0: r.fy0 / frameH,
+                rx1: r.fx1 / frameW,
+                ry1: r.fy1 / frameH,
+            };
+        }
+
+        /**
+         * Compute the letterbox rectangle (object-fit:contain equivalent) for the video
+         * inside an overlay of given dimensions.
+         * @param {number} frameW
+         * @param {number} frameH
+         * @param {number} overlayW
+         * @param {number} overlayH
+         * @returns {{vidLeft, vidTop, vidW, vidH}}
+         */
+        function computeLetterbox(frameW, frameH, overlayW, overlayH) {
+            const frameAR   = frameW / frameH;
+            const overlayAR = overlayW / overlayH;
+            if (frameAR > overlayAR) {
+                // Wider frame → pillarboxed (full width, shorter height)
+                const vidH = overlayW / frameAR;
+                return { vidLeft: 0, vidTop: (overlayH - vidH) / 2, vidW: overlayW, vidH };
+            } else {
+                // Taller frame → letterboxed (full height, narrower width)
+                const vidW = overlayH * frameAR;
+                return { vidLeft: (overlayW - vidW) / 2, vidTop: 0, vidW, vidH: overlayH };
+            }
+        }
+
+        /**
+         * Map normalised frame fractions to overlay-percentage CSS values.
+         * @param {{rx0,ry0,rx1,ry1}} frac
+         * @param {{vidLeft,vidTop,vidW,vidH}} lb  — from computeLetterbox
+         * @param {number} overlayW
+         * @param {number} overlayH
+         * @returns {{left, top, w, h}}  — all in %
+         */
+        function fractionToOverlayPct(frac, lb, overlayW, overlayH) {
+            const { rx0, ry0, rx1, ry1 } = frac;
+            const { vidLeft, vidTop, vidW, vidH } = lb;
+            return {
+                left: ((vidLeft + rx0 * vidW) / overlayW) * 100,
+                top:  ((vidTop  + ry0 * vidH) / overlayH) * 100,
+                w:    ((rx1 - rx0) * vidW / overlayW) * 100,
+                h:    ((ry1 - ry0) * vidH / overlayH) * 100,
+            };
+        }
+
+        /**
+         * Full pipeline: ocrWord bounding box → overlay-percentage CSS rect.
+         * Returns null if ocrCropInfo is not set.
+         */
+        function ocrWordToOverlayPct(word) {
+            if (!ocrCropInfo) return null;
+            const { frameW, frameH } = ocrCropInfo;
+            const overlayW = transformLayer.offsetWidth  || workspace.clientWidth;
+            const overlayH = transformLayer.offsetHeight || workspace.clientHeight;
+
+            const inFrame  = ocrRectToFrame(word, ocrCropInfo);
+            const flipped  = applyFrameFlip(inFrame, frameW, frameH, state.flipH, state.flipV);
+            const frac     = frameRectToFraction(flipped, frameW, frameH);
+            const lb       = computeLetterbox(frameW, frameH, overlayW, overlayH);
+            return fractionToOverlayPct(frac, lb, overlayW, overlayH);
+        }
+
+        function positionWordHighlight(word) {
+            const pct = ocrWordToOverlayPct(word);
+            if (!pct) return;
+            ttsWordHighlight.style.left   = pct.left + '%';
+            ttsWordHighlight.style.top    = pct.top  + '%';
+            ttsWordHighlight.style.width  = pct.w    + '%';
+            ttsWordHighlight.style.height = pct.h    + '%';
+            ttsWordHighlight.classList.add('visible');
+        }
+
+        function hideWordHighlight() {
+            ttsWordHighlight.classList.remove('visible');
+        }
+
+        // --- Highlight color ---
+        function applyHighlightColor(hex) {
+            state.ttsHighlightColor = hex;
+            // Set fill color on the workspace root (inherited by the CSS var)
+            workspace.style.setProperty('--tts-highlight-color', hex);
+            // Derive a contrasting stroke: dark stroke for light colours, light for dark
+            const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+            const lum = 0.299*r + 0.587*g + 0.114*b;
+            workspace.style.setProperty('--tts-highlight-stroke', lum > 128 ? '#1a1a1a' : '#ffffff');
+            const el = document.getElementById('tts-highlight-color');
+            if (el) el.value = hex;
+            savePrefs();
+        }
+
+        // Wire up highlight color picker
+        const _hlColorPicker = document.getElementById('tts-highlight-color');
+        if (_hlColorPicker) {
+            _hlColorPicker.addEventListener('input', () => applyHighlightColor(_hlColorPicker.value));
+            _hlColorPicker.addEventListener('change', () => applyHighlightColor(_hlColorPicker.value));
+        }
+        const _hlResetBtn = document.getElementById('btn-tts-highlight-reset');
+        if (_hlResetBtn) _hlResetBtn.addEventListener('click', () => applyHighlightColor('#FFD700'));
+
+        // Apply saved color on init
+        applyHighlightColor(state.ttsHighlightColor || '#FFD700');
+
+        // --- Click-to-jump: click frozen frame → nearest OCR word → jump speech ---
+        const ttsClickOverlay = document.getElementById('tts-click-overlay');
+
+        function updateClickOverlay() {
+            if (!ttsClickOverlay) return;
+            const show = state.isFrozen && state.isTtsEnabled && ocrWords.length > 0;
+            ttsClickOverlay.style.display = show ? '' : 'none';
+            ttsClickOverlay.style.pointerEvents = show ? 'auto' : 'none';
+            ttsClickOverlay.setAttribute('aria-hidden', show ? 'false' : 'true');
+            ttsClickOverlay.setAttribute('tabindex', show ? '0' : '-1');
+        }
+
+        if (ttsClickOverlay) {
+            ttsClickOverlay.addEventListener('click', (e) => {
+                if (!ocrCropInfo || !ocrWords.length) return;
+
+                const { frameW, frameH, srcX, srcY, srcW, srcH, ocrW, ocrH } = ocrCropInfo;
+                const overlayW = transformLayer.offsetWidth  || workspace.clientWidth;
+                const overlayH = transformLayer.offsetHeight || workspace.clientHeight;
+
+                // Step 1: click in screen px → fraction of the transform-layer bounding rect
+                const rect   = transformLayer.getBoundingClientRect();
+                const clickX = (e.clientX - rect.left) / rect.width;
+                const clickY = (e.clientY - rect.top)  / rect.height;
+
+                // Step 2: invert the pan+scale CSS transform to get overlay-local fraction.
+                // The transform is translate(panX,panY) scale(streamScale) around centre 0.5,0.5.
+                const scale  = state.streamScale;
+                const cx = 0.5, cy = 0.5;
+                const olX = cx + (clickX - cx) / scale - (state.panX / rect.width)  / scale;
+                const olY = cy + (clickY - cy) / scale - (state.panY / rect.height) / scale;
+
+                // Step 3: overlay fraction → full-frame px via the letterbox geometry
+                const lb   = computeLetterbox(frameW, frameH, overlayW, overlayH);
+                const fpX  = ((olX * overlayW - lb.vidLeft) / lb.vidW) * frameW;
+                const fpY  = ((olY * overlayH - lb.vidTop)  / lb.vidH) * frameH;
+
+                // Step 4: full-frame px → ocrCanvas px (inverse of ocrRectToFrame)
+                const ocX  = (fpX - srcX) / srcW * ocrW;
+                const ocY  = (fpY - srcY) / srcH * ocrH;
+
+                // Step 5: find nearest OCR word by centre-point Euclidean distance
+                let bestWord = null, bestDist = Infinity, bestWordIdx = 0;
+                ocrWords.forEach((w, i) => {
+                    const wcx = (w.x0 + w.x1) / 2;
+                    const wcy = (w.y0 + w.y1) / 2;
+                    const d   = Math.hypot(wcx - ocX, wcy - ocY);
+                    if (d < bestDist) { bestDist = d; bestWord = w; bestWordIdx = i; }
+                });
+                if (!bestWord) return;
+
+                // Step 6: map ocrWords index → reading-unit index
+                let cumulative = 0;
+                let targetUnit = ttsUnits.length - 1;
+                for (let u = 0; u < ttsUnits.length; u++) {
+                    const unitWordCount = ttsUnits[u]
+                        .split(/\s+/)
+                        .filter(w => /[a-zA-Z0-9]{2,}/.test(w)).length;
+                    if (bestWordIdx < cumulative + unitWordCount) { targetUnit = u; break; }
+                    cumulative += unitWordCount;
+                }
+                speakUnit(targetUnit);
+            });
+
+            // Keyboard activation for the click overlay (role="button", tabindex toggled by updateClickOverlay)
+            ttsClickOverlay.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    // Keyboard users can't "click" a position — jump to the next unread unit instead
+                    if (ttsUnits.length) speakUnit(ttsUnitIndex);
+                }
+            });
+        }
+
+        function stopTts() {
+            stopKeepalive();
+            window.speechSynthesis.cancel();
+            ttsIsPlaying = false;
+            hideWordHighlight();
+            updateTtsControls();
+            setTtsStatus(ttsUnits.length
+                ? `${ttsUnits.length} ${state.ttsUnit}${ttsUnits.length !== 1 ? 's' : ''}`
+                : 'Ready');
+        }
+
+        function setTtsStatus(html) {
+            ttsStatusLabel.innerHTML = html;
+        }
+
+        function updateTtsControls() {
+            const playing = ttsIsPlaying;
+            const unit = state.ttsUnit || 'sentence'; // sentence | word | paragraph
+            document.getElementById('tts-play-icon').style.display  = playing ? 'none' : '';
+            document.getElementById('tts-pause-icon').style.display = playing ? ''     : 'none';
+            btnTtsPlay.setAttribute('aria-label', playing ? 'Pause reading' : (ttsUnits.length ? `Resume reading` : 'Read aloud — scan text first'));
+            btnTtsPlay.setAttribute('aria-pressed', playing ? 'true' : 'false');
+            // Prev/next labels include the unit type so AT announces e.g. "Previous sentence"
+            const unitCap = unit.charAt(0).toUpperCase() + unit.slice(1);
+            btnTtsPrev.setAttribute('aria-label', `Previous ${unit}`);
+            btnTtsNext.setAttribute('aria-label', `Next ${unit}`);
+            // Play is grayed only while Tesseract is mid-load (Native is instant).
+            const loading = tesseractLoading && state.ocrEngine !== 'native' &&
+                            !(state.ocrEngine === 'auto' && NATIVE_OCR_SUPPORTED);
+            btnTtsPlay.disabled = loading;
+            btnTtsPrev.disabled = ttsUnits.length === 0;
+            btnTtsNext.disabled = ttsUnits.length === 0;
+            // Update range slider aria-valuenow to match current values
+            const rateSlider = document.getElementById('tts-rate-slider');
+            if (rateSlider) rateSlider.setAttribute('aria-valuenow', state.ttsRate);
+            const pitchSlider = document.getElementById('tts-pitch-slider');
+            if (pitchSlider) pitchSlider.setAttribute('aria-valuenow', state.ttsPitch);
+        }
+
+        // --- Terminate the Tesseract worker and free its memory ---
+        // Called when the user explicitly disables TTS. Creating a new worker is expensive
+        // (~10MB download) but keeping it idle wastes RAM; we accept the re-load cost.
+        async function terminateTesseract() {
+            if (tesseractWorker) {
+                try { await tesseractWorker.terminate(); } catch(_) {}
+                tesseractWorker = null;
+            }
+            tesseractReady   = false;
+            tesseractLoading = false;
+            if (state.ocrEngine !== 'native') {
+                ttsOcrStatus.textContent = 'OCR engine: not loaded';
+            }
+        }
+
+        // Tesseract recognition wrapper — called by runOcr() when engine = tesseract
+        async function runTesseractOcr(canvas) {
+            await loadTesseract();
+            const result = await tesseractWorker.recognize(canvas, {}, {
+                blocks: true, hocr: false, tsv: false, text: true
+            });
+            const text  = result.data.text.trim();
+            const words = (result.data.words || []).filter(w => w.text.trim()).map(w => ({
+                text: w.text,
+                x0: w.bbox.x0, y0: w.bbox.y0,
+                x1: w.bbox.x1, y1: w.bbox.y1,
+            }));
+            return { text, words };
+        }
+
+        // Wire up engine-selector radios + init native UI after DOM is ready
+        function initOcrEngineUI() {
+            initNativeEngineUI();
+            document.querySelectorAll('input[name="ocr-engine"]').forEach(r => {
+                r.addEventListener('change', () => {
+                    state.ocrEngine = r.value;
+                    savePrefs();
+                    if (r.value === 'native') {
+                        ttsOcrStatus.textContent = NATIVE_OCR_SUPPORTED
+                            ? 'OCR engine: Native ⚡ (OS-level)'
+                            : 'OCR engine: Native not available in this browser';
+                        // No pre-load needed — Native is instant
+                    } else {
+                        ttsOcrStatus.textContent = tesseractReady
+                            ? 'OCR engine: Tesseract.js v5 ✓'
+                            : 'OCR engine: not loaded';
+                    }
+                    // If frozen, re-run OCR with new engine immediately
+                    if (state.isFrozen && state.isTtsEnabled) {
+                        clearTtsState('<span class="tts-spinner"></span>Switching engine…');
+                        setTimeout(runOcr, 50);
+                    }
+                });
+                if (r.value === state.ocrEngine ||
+                    (state.ocrEngine === 'auto' && r.value === (NATIVE_OCR_SUPPORTED ? 'native' : 'tesseract'))) {
+                    r.checked = true;
+                }
+            });
+        }
+
+        // --- TTS bar visibility ---
+        function syncTtsBar() {
+            if (state.isTtsEnabled) {
+                ttsBar.classList.add('tts-enabled');
+                updateTtsControls(); // unlock play button immediately
+                // Trigger fade-in after display:flex is applied (needs one frame gap)
+                requestAnimationFrame(() => ttsBar.classList.add('bar-visible'));
+            } else {
+                ttsBar.classList.remove('tts-enabled', 'bar-visible');
+                clearTtsState();
+                // Free the Tesseract worker when the feature is fully switched off
+                terminateTesseract();
+            }
+        }
+
+        // --- Populate voice list ---
+        // Called both on init (voices may be empty) and on onvoiceschanged (voices ready).
+        // Re-applies the saved ttsVoiceURI every time so the race condition between
+        // restoreTtsPrefs() and async voice loading is resolved here, not at restore time.
+        function populateVoices() {
+            const voices = window.speechSynthesis.getVoices();
+            if (!voices.length) return; // not ready yet — onvoiceschanged will re-fire
+            ttsVoiceSelect.innerHTML = '';
+            voices.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.voiceURI;
+                opt.textContent = `${v.name} (${v.lang})`;
+                ttsVoiceSelect.appendChild(opt);
+            });
+            // Re-apply saved preference if it matches a loaded voice; otherwise pick a default
+            const savedMatch = voices.find(v => v.voiceURI === state.ttsVoiceURI);
+            if (savedMatch) {
+                ttsVoiceSelect.value = savedMatch.voiceURI;
+            } else {
+                const local = voices.find(v => v.localService) || voices[0];
+                state.ttsVoiceURI = local.voiceURI;
+                ttsVoiceSelect.value = local.voiceURI;
+            }
+        }
+        window.speechSynthesis.onvoiceschanged = populateVoices;
+        populateVoices();
+
+        // Focus trap helper — returns focusable elements within a container
+        function getFocusable(container) {
+            return Array.from(container.querySelectorAll(
+                'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )).filter(el => !el.closest('[style*="display: none"]') && !el.closest('[style*="display:none"]'));
+        }
+
+        function trapFocus(container, e) {
+            const focusable = getFocusable(container);
+            if (!focusable.length) return;
+            const first = focusable[0], last = focusable[focusable.length - 1];
+            if (e.key === 'Tab') {
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault(); last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault(); first.focus();
+                }
+            }
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                ttsSettingsPanel.classList.remove('open');
+                btnTtsSettings.setAttribute('aria-expanded', 'false');
+                btnTtsSettings.focus();
+            }
+        }
+
+        ttsSettingsPanel.addEventListener('keydown', (e) => trapFocus(ttsSettingsPanel, e));
+
+        // Settings panel open/close
+        btnTtsSettings.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const open = ttsSettingsPanel.classList.toggle('open');
+            btnTtsSettings.setAttribute('aria-expanded', open);
+            // Close text panel if open
+            ttsTextPanel.classList.remove('open');
+            btnTtsText.setAttribute('aria-expanded', 'false');
+            // Move focus into the panel so AT users land on the first control
+            if (open) {
+                const first = getFocusable(ttsSettingsPanel)[0];
+                if (first) requestAnimationFrame(() => first.focus());
+            }
+        });
+        document.addEventListener('click', (e) => {
+            if (!ttsSettingsPanel.contains(e.target) && e.target !== btnTtsSettings) {
+                ttsSettingsPanel.classList.remove('open');
+                btnTtsSettings.setAttribute('aria-expanded', 'false');
+            }
+        });
+
+        ttsVoiceSelect.addEventListener('change', () => {
+            state.ttsVoiceURI = ttsVoiceSelect.value;
+            savePrefs();
+        });
+
+        // Reading-unit radio: re-split existing OCR text on change (no re-OCR needed)
+        document.querySelectorAll('input[name="tts-unit"]').forEach(r => {
+            r.addEventListener('change', () => {
+                state.ttsUnit = r.value;
+                savePrefs();
+                if (ocrWords.length && state.isFrozen) {
+                    window.speechSynthesis.cancel();
+                    ttsIsPlaying = false;
+                    hideWordHighlight();
+                    const fullText = ocrWords.map(w => w.text).join(' ');
+                    ttsUnits = splitIntoUnits(fullText, state.ttsUnit);
+                    ttsUnitIndex = 0;
+                    setTtsStatus(`${ttsUnits.length} ${state.ttsUnit}${ttsUnits.length !== 1 ? 's' : ''}`);
+                    renderTtsTextPanel();
+                    updateTtsControls();
+                }
+            });
+            if (r.value === state.ttsUnit) r.checked = true;
+        });
+
+        // OCR-region radio: changing region while frozen invalidates the current result
+        // and immediately re-runs OCR so the new region is scanned.
+        document.querySelectorAll('input[name="tts-region"]').forEach(r => {
+            r.addEventListener('change', () => {
+                state.ttsRegion = r.value;
+                savePrefs();
+                if (state.isFrozen && state.isTtsEnabled) {
+                    clearTtsState('<span class="tts-spinner"></span>Re-scanning…');
+                    setTimeout(runOcr, 50);
+                }
+            });
+            if (r.value === state.ttsRegion) r.checked = true;
+        });
+
+        ttsRateSlider.addEventListener('input', () => {
+            state.ttsRate = parseFloat(ttsRateSlider.value);
+            ttsRateLabel.textContent = state.ttsRate.toFixed(1) + '×';
+            savePrefs();
+        });
+        ttsPitchSlider.addEventListener('input', () => {
+            state.ttsPitch = parseFloat(ttsPitchSlider.value);
+            ttsPitchLabel.textContent = state.ttsPitch.toFixed(1);
+            savePrefs();
+        });
+
+        // --- Transport controls ---
+        btnTtsPlay.addEventListener('click', () => {
+            if (ttsIsPlaying) {
+                window.speechSynthesis.cancel();
+                ttsIsPlaying = false;
+                hideWordHighlight();
+                updateTtsControls();
+                setTtsStatus('Paused');
+            } else {
+                if (ttsUnits.length) {
+                    speakUnit(ttsUnitIndex);
+                } else {
+                    runOcr();
+                }
+            }
+        });
+
+        btnTtsPrev.addEventListener('click', () => {
+            speakUnit(Math.max(0, ttsUnitIndex - 1));
+        });
+
+        btnTtsNext.addEventListener('click', () => {
+            const next = ttsUnitIndex + 1;
+            if (next < ttsUnits.length) speakUnit(next);
+        });
+
+        // --- Enable/disable TTS from More Options ---
+        wrapMenuAction('btn-tts-enable', () => {
+            state.isTtsEnabled = !state.isTtsEnabled;
+            const btn = document.getElementById('btn-tts-enable');
+            btn.classList.toggle('active-state', state.isTtsEnabled);
+            btn.setAttribute('aria-pressed', state.isTtsEnabled);
+            setIndicator('ind-tts', state.isTtsEnabled);
+            syncTtsBar();
+            showStatus(state.isTtsEnabled ? 'TTS Enabled' : 'TTS Disabled');
+            if (state.isTtsEnabled) {
+                // Init engine UI (shows Native radio if available, sets default engine)
+                initOcrEngineUI();
+                // Pre-load Tesseract in background only if it will actually be used
+                const willUseTesseract = state.ocrEngine === 'tesseract' ||
+                    (state.ocrEngine === 'auto' && !NATIVE_OCR_SUPPORTED);
+                if (willUseTesseract && !tesseractReady && !tesseractLoading) {
+                    loadTesseract().catch(() => {});
+                }
+            }
+        });
+
+        // --- Freeze observer: triggers OCR automatically when the frame is ready ---
+        // Freeze button: passes runOcr as the onFreshFrame callback so OCR fires
+        // exactly when latestFrame is ready — no observer, no timing guesswork.
+        freezeBtn.addEventListener('click', () => {
+            if (state.isFrozen) {
+                // Currently frozen — unfreeze and wipe TTS state
+                clearTimeout(_rescanTimer);
+                toggleFreeze();
+                clearTtsState('Ready');
+            } else {
+                // Not frozen — freeze and trigger OCR when the fresh frame arrives
+                toggleFreeze(state.isTtsEnabled ? runOcr : undefined);
+            }
+        });
+
+        // --- Restore TTS settings from saved prefs ---
+        function restoreTtsPrefs(saved) {
+            if (!saved) return;
+            if (saved.ttsUnit)    { state.ttsUnit    = saved.ttsUnit;    document.querySelectorAll('input[name="tts-unit"]').forEach(r   => { r.checked = r.value === state.ttsUnit; }); }
+            if (saved.ttsRegion)  { state.ttsRegion  = saved.ttsRegion;  document.querySelectorAll('input[name="tts-region"]').forEach(r => { r.checked = r.value === state.ttsRegion; }); }
+            if (saved.ttsRate)    { state.ttsRate    = saved.ttsRate;    ttsRateSlider.value  = state.ttsRate;  ttsRateLabel.textContent  = state.ttsRate.toFixed(1) + '×'; }
+            if (saved.ttsPitch)   { state.ttsPitch   = saved.ttsPitch;   ttsPitchSlider.value = state.ttsPitch; ttsPitchLabel.textContent = state.ttsPitch.toFixed(1); }
+            if (saved.ttsVoiceURI)  { state.ttsVoiceURI  = saved.ttsVoiceURI;  /* populateVoices() will apply to dropdown when voices are ready */ }
+            if (saved.ocrEngine)    { state.ocrEngine    = saved.ocrEngine; }
+            if (saved.ttsHighlightColor) {
+                // '#ffffff' was the old broken default (invisible on light backgrounds).
+                // Silently migrate anyone who saved it to the new yellow default.
+                const color = saved.ttsHighlightColor === '#ffffff' ? '#FFD700' : saved.ttsHighlightColor;
+                applyHighlightColor(color);
+            }
+            if (saved.isTtsEnabled) {
+                state.isTtsEnabled = true;
+                const btn = document.getElementById('btn-tts-enable');
+                btn.classList.add('active-state');
+                btn.setAttribute('aria-pressed', 'true');
+                setIndicator('ind-tts', true);
+                syncTtsBar();
+                initOcrEngineUI();
+                // Pre-load Tesseract only if it will be used
+                const willUseTesseract = state.ocrEngine === 'tesseract' ||
+                    (state.ocrEngine === 'auto' && !NATIVE_OCR_SUPPORTED);
+                if (willUseTesseract && !tesseractReady && !tesseractLoading) {
+                    loadTesseract().catch(() => {});
+                }
+            } else {
+                // Still init the engine UI so radios reflect saved state
+                initOcrEngineUI();
+            }
+            if (saved.ttsTextScale) applyTtsTextScale(saved.ttsTextScale);
+        }
+
+        // ================================================================
+        // TTS RAW TEXT PANEL
+        // ================================================================
+
+        const ttsTextPanel   = document.getElementById('tts-text-panel');
+        const ttsRawText     = document.getElementById('tts-raw-text');
+        const btnTtsText     = document.getElementById('btn-tts-text');
+        const btnTtsTextZoomIn  = document.getElementById('btn-tts-text-zoom-in');
+        const btnTtsTextZoomOut = document.getElementById('btn-tts-text-zoom-out');
+
+        // Apply a text scale value to the panel via CSS custom property
+        function applyTtsTextScale(scale) {
+            state.ttsTextScale = Math.min(3.0, Math.max(0.5, scale));
+            ttsTextPanel.style.setProperty('--tts-text-scale', state.ttsTextScale);
+            savePrefs();
+        }
+
+        // Render or refresh the raw text panel content.
+        // Wraps each reading unit in a <span class="tts-unit"> for active-unit highlighting.
+        // Called after OCR completes, when the unit type changes, and when speakUnit() advances.
+        function renderTtsTextPanel() {
+            if (!ttsUnits.length) {
+                ttsRawText.textContent = '';
+                return;
+            }
+            ttsRawText.innerHTML = ttsUnits.map((text, i) =>
+                `<span class="tts-unit${i === ttsUnitIndex ? ' tts-unit-active' : ''}" data-unit="${i}">${escapeHtml(text)}</span>`
+            ).join(' ');
+        }
+
+        // Update just the active-unit highlight without re-rendering everything
+        function updateTtsTextPanelActive() {
+            ttsRawText.querySelectorAll('.tts-unit').forEach((el, i) => {
+                el.classList.toggle('tts-unit-active', i === ttsUnitIndex);
+            });
+            // Scroll the active unit into view smoothly
+            const active = ttsRawText.querySelector('.tts-unit-active');
+            if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        // Toggle text panel open/close (mutually exclusive with settings panel)
+        btnTtsText.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const opening = !ttsTextPanel.classList.contains('open');
+            ttsTextPanel.classList.toggle('open', opening);
+            btnTtsText.setAttribute('aria-expanded', opening);
+            // Close settings panel if open
+            ttsSettingsPanel.classList.remove('open');
+            btnTtsSettings.setAttribute('aria-expanded', 'false');
+            if (opening) renderTtsTextPanel();
+        });
+
+        // Close text panel when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!ttsTextPanel.contains(e.target) && e.target !== btnTtsText) {
+                ttsTextPanel.classList.remove('open');
+                btnTtsText.setAttribute('aria-expanded', 'false');
+            }
+        });
+
+        // Clicking a unit in the text panel jumps speech to that unit
+        ttsRawText.addEventListener('click', (e) => {
+            const unitEl = e.target.closest('.tts-unit');
+            if (!unitEl) return;
+            const idx = parseInt(unitEl.dataset.unit, 10);
+            if (!isNaN(idx)) speakUnit(idx);
+        });
+
+        btnTtsTextZoomIn.addEventListener('click',  () => applyTtsTextScale(state.ttsTextScale + 0.15));
+        btnTtsTextZoomOut.addEventListener('click', () => applyTtsTextScale(state.ttsTextScale - 0.15));
+
+        // ================================================================
+        // END TTS / OCR ENGINE
+        // ================================================================
+
         document.getElementById('btn-reset-all').addEventListener('click', () => {
-            vdoFrame.src = 'about:blank'; // Force disconnect before redirect
+            dlog('reset_all', { latestFrameLen: latestFrame ? latestFrame.length : null });
+            clearTtsState();
+            state.isTtsEnabled = false;
+            ttsBar.classList.remove('tts-enabled', 'bar-visible');
+            document.body.classList.remove('is-frozen');
+            vdoFrame.src = 'about:blank';
+            stopSnapshotPipeline();
+            latestFrame = null;
+            knownStreamID = null;
+            state.isScanActive = false;
+            freezeOverlay.classList.remove('active');
+            freezeOverlay.style.backgroundImage = '';
+            scanBtn.disabled = true;
+            scanBtn.classList.remove('active-state');
+            scanBtn.setAttribute('aria-pressed', 'false');
             try {
                 localStorage.removeItem('vdoMagnifierThemes');
                 localStorage.removeItem('vdoMagnifierPrefs');
@@ -2511,21 +5250,39 @@
         // --- Keyboard Shortcuts ---
         // Helper: returns true if keyboard input should be captured by the UI rather than
         // treated as an app shortcut. Covers: text inputs, open dropdowns, open modal.
+        // isUICaptured() — returns true when keyboard input should go to the UI rather than
+        // global hotkeys.  Covers every current and likely-future interactive element type:
+        //   • <input> of any type (text, url, range, color, …)
+        //   • <textarea>
+        //   • <select>
+        //   • any element with contenteditable="true" or contenteditable="" (truthy)
+        //   • an open modal dialog
+        //   • an open dropdown menu
+        //   • a hotkey card that is in listening mode (it installs its own capture-phase
+        //     listener, but isUICaptured() provides a second line of defence)
+        //
+        // MAINTENANCE: if new interactive element types are added to the app, add their
+        // tag names to CAPTURED_TAGS or handle them with an additional early-return guard.
+        const CAPTURED_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
         function isUICaptured() {
-            if (document.activeElement.tagName === 'INPUT') return true;
+            const active = document.activeElement;
+            if (!active) return false;
+            if (CAPTURED_TAGS.has(active.tagName)) return true;
+            if (active.isContentEditable) return true;
             if (customModal.getAttribute('aria-hidden') !== 'true') return true;
             if (document.querySelector('.dropdown-content.show')) return true;
+            if (listeningCard !== null) return true; // hotkey remapping in progress
             return false;
         }
 
         document.addEventListener('keydown', (e) => {
             if (isUICaptured()) return;
 
-            if (e.key >= '0' && e.key <= '8') {
+            // Non-remappable: numeric theme selectors (0–8), no modifiers
+            if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key >= '0' && e.key <= '8') {
                 clearTimeout(previewTimeout);
                 const idx = parseInt(e.key);
                 if (idx === 0) {
-                    // Key 0 is always Natural Colors regardless of drag order
                     const natTheme = themes.find(t => t.id === 'nat');
                     if (natTheme) applyTheme('nat', false);
                 } else if (idx < themes.length) {
@@ -2534,84 +5291,50 @@
                 return;
             }
 
+            // Non-remappable: custom theme modal
             if (e.key === '(' || (e.key === '9' && e.shiftKey)) {
                 openCustomModal();
                 return;
             }
 
-            switch(e.key.toLowerCase()) {
-                case '9':
-                    if (document.body.classList.contains('video-active')) {
-                        document.getElementById('btn-extended-themes').click();
-                    } else {
-                        document.getElementById('btn-toggle-extended').click();
-                    }
-                    break;
-                case '=':
-                case '+':
-                    performZoom(1); break;
-                case '-':
-                case '_':
-                    performZoom(-1); break;
-                case ',':
-                    document.getElementById('btn-reading-line').click(); break;
-                case '.':
-                    document.getElementById('btn-reading-mask').click(); break;
-                case '/':
-                    if (document.body.classList.contains('video-active')) {
-                        e.preventDefault(); 
-                        document.getElementById('btn-reading-auto').click(); 
-                    }
-                    break;
-                case 'p':
-                    document.getElementById('btn-toggle-hover-pan').click(); break;
-                case 'arrowup':
-                case 'w':
-                    if (e.shiftKey) return;
-                    e.preventDefault(); pressKeyPan('up'); break;
-                case 'arrowdown':
-                case 's':
-                    if (e.shiftKey) return;
-                    e.preventDefault(); pressKeyPan('down'); break;
-                case 'arrowleft':
-                case 'a':
-                    if (e.shiftKey) return;
-                    e.preventDefault(); pressKeyPan('left'); break;
-                case 'arrowright':
-                case 'd':
-                    if (e.shiftKey) return;
-                    e.preventDefault(); pressKeyPan('right'); break;
-                case 'x':
-                    document.getElementById('btn-toggle-cursor').click(); break;
-                case 'i':
-                    document.getElementById('btn-invert').click(); break;
-                case 'c':
-                    document.getElementById('btn-contrast').click(); break;
-                case 'r':
-                    document.getElementById('btn-reset-view').click(); break;
-                case 'm':
-                    toggleFullscreen(); break;
-                case 'h':
-                    toggleMenu(); break;
-                case 'escape':
-                    if (customModal.getAttribute('aria-hidden') !== 'true') {
-                        closeCustomModal();
-                    } else if (document.querySelector('.dropdown-content.show')) {
-                        closeAllDropdowns(true);
-                    } else {
-                        toggleMenu();
-                    }
-                    break;
-                // FIX: Wrap case body in a block to allow lexical declarations (const) safely
-                case 't': {
-                    clearTimeout(previewTimeout);
-                    const idxToCycle = themes.findIndex(t => t.id === state.activeThemeId);
-                    if (e.shiftKey) applyTheme(themes[(idxToCycle - 1 + themes.length) % themes.length].id, false);
-                    else applyTheme(themes[(idxToCycle + 1) % themes.length].id, false);
-                    break;
+            // Non-remappable: extended themes toggle
+            if (e.key === '9' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                if (document.body.classList.contains('video-active')) {
+                    document.getElementById('btn-extended-themes').click();
+                } else {
+                    document.getElementById('btn-toggle-extended').click();
                 }
-                case 'f':
-                    toggleFreeze(); break;
+                return;
+            }
+
+            // Non-remappable: WASD / Arrow key pan (held-key engine), no modifiers
+            if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                switch (e.key) {
+                    case 'ArrowUp':    case 'w': if (!e.shiftKey) { e.preventDefault(); pressKeyPan('up');    return; } break;
+                    case 'ArrowDown':  case 's': if (!e.shiftKey) { e.preventDefault(); pressKeyPan('down');  return; } break;
+                    case 'ArrowLeft':  case 'a': if (!e.shiftKey) { e.preventDefault(); pressKeyPan('left');  return; } break;
+                    case 'ArrowRight': case 'd': if (!e.shiftKey) { e.preventDefault(); pressKeyPan('right'); return; } break;
+                }
+            }
+
+            // Non-remappable: Escape (modal / dropdown / menu toggle)
+            if (e.key === 'Escape') {
+                if (customModal.getAttribute('aria-hidden') !== 'true') {
+                    closeCustomModal();
+                } else if (document.querySelector('.dropdown-content.show')) {
+                    closeAllDropdowns(true);
+                } else {
+                    toggleMenu();
+                }
+                return;
+            }
+
+            // Remappable actions — build compound key and look up via registry
+            const compoundKey = normalizeEventKey(e);
+            if (!compoundKey) return; // pure modifier keypress, nothing to dispatch
+            const actionId = getActionForKey(compoundKey);
+            if (actionId) {
+                dispatchHotkeyAction(actionId, e);
             }
         });
 
