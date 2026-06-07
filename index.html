@@ -3259,6 +3259,9 @@
                         <label>
                             <input type="radio" name="ocr-engine" value="tesseract" checked><span>Tesseract</span>
                         </label>
+                        <label id="ocr-engine-rapidocr-label" style="display:none">
+                            <input type="radio" name="ocr-engine" value="rapidocr"><span>⚡ RapidOCR (GPU)</span>
+                        </label>
                     </div>
                     <div id="tts-ocr-status" role="status" aria-live="polite" aria-atomic="true">OCR engine: not loaded</div>
                 </div>
@@ -4304,7 +4307,8 @@
             ttsPitch: 1.0,
             ttsVoiceURI: '',
             ttsTextScale: 1.0,
-            ocrEngine: 'auto',  // 'auto' | 'native' | 'tesseract'
+            ocrEngine: 'auto',  // 'auto' | 'native' | 'tesseract' | 'rapidocr'
+            ocrLang: 'eng',     // OCR language (Tesseract code; see LANGUAGE_REGISTRY)
             ttsHighlightColor: '#FFD700',
             readingMode: 'none', readingAutoFollow: true, readingY: window.innerHeight / 2,
             readingGap: 150, hideReadingHint: false, readingFollowTts: false,
@@ -4568,6 +4572,11 @@
                     delete parsed.ocrEngine; delete parsed.ttsHighlightColor;
                 }
 
+                // Never restore runtime-only flags — their UI (overlay, buttons, CSS class)
+                // is not reconciled on load, so restoring them produces a broken state.
+                delete parsed.isFrozen;
+                delete parsed.isScanActive;
+                delete parsed.isOcrRunning;
                 Object.assign(state, parsed);
                 // TTS UI elements are wired after the main JS block — defer restore
                 setTimeout(() => restoreTtsPrefs(parsed), 0);
@@ -4885,7 +4894,7 @@
                 const isHomescreenFav = index <= 8;
                 // Toolbar respects the configured count; sidebar auto-trim is handled
                 // separately by _trimSidebarSwatches() inside adjustToolbar().
-                const isToolbarFav = index <= configuredCount;
+                const isToolbarFav = index < configuredCount;
 
                 const displayName = isHomescreenFav ? `${index}: ${t.name}` : t.name;
 
@@ -5507,7 +5516,9 @@
                 vdoInput.value = autoUrl;
                 startBtn.click();
             } else if (autoView) {
-                vdoInput.value = "https://vdo.ninja/?view=" + autoView;
+                const _viewUrl = new URL("https://vdo.ninja/");
+                _viewUrl.searchParams.set('view', autoView);
+                vdoInput.value = _viewUrl.toString();
                 startBtn.click();
             } else {
                 // Autofill priority:
@@ -5685,7 +5696,7 @@
                 const urlParams = new URLSearchParams(window.location.search);
                 const autoZoom = urlParams.get('zoom');
                 
-                if (autoZoom !== null && !isNaN(autoZoom) && !windowHasStartedOnce) {
+                if (autoZoom !== null && autoZoom !== '' && !isNaN(autoZoom) && !windowHasStartedOnce) {
                     state.streamScale = Math.max(1.0, parseFloat(autoZoom) / 100);
                 } 
                 
@@ -5770,6 +5781,20 @@
                 return true;
             }
         })();
+
+        // --- Remote-stream snapshot capability detection ---
+        // VDO.ninja's getSnapshotByStreamID / getSnapshotBySlot handler grabs a frame from
+        // the incoming WebRTC track using `new MediaStreamTrackProcessor(...)`, which is a
+        // Chromium-only API (absent in Safari, and Firefox without a flag). On browsers that
+        // lack it, VDO.ninja throws internally and NEVER posts a frame response back — so our
+        // on-demand capture (and therefore OCR/TTS on a remote stream) can never complete.
+        //
+        // The iframe runs the same browser engine as this parent window, so feature-detecting
+        // here is a reliable proxy for whether the iframe's snapshot handler will work.
+        // Local screen-share mode is exempt: it captures frames directly from a <video>
+        // element via canvas.drawImage, which works everywhere.
+        const SNAPSHOT_API_UNSUPPORTED = (typeof window.MediaStreamTrackProcessor === 'undefined');
+
         // --- Debounced re-scan when the viewport changes while frozen ---
         // Fires 600ms after the last pan/zoom, cancels in-progress OCR by clearing
         // state first so runOcr() immediately supersedes any running recognition.
@@ -5782,6 +5807,9 @@
                 runOcr();
             }, 600);
         }
+        // Remembers the last pan/zoom so updateVisuals() can fire a viewport re-scan only
+        // when the view actually MOVED (not on theme/contrast/flip changes that also call it).
+        let _lastViewKey = null;
 
         const svgFilterRef = 'url(#theme-filter)';
         function updateVisuals(previewThemeId = null) {
@@ -5864,6 +5892,19 @@
 
                 transformLayer.style.filter = wrapperFilter.trim() || 'none';
                 if(zoomOutBtn()) zoomOutBtn().disabled = (state.streamScale <= 1.0);
+
+                // Viewport-region OCR follows the view: when reading the "current zoomed
+                // area" while frozen, a pan or zoom changes which text is visible, so
+                // re-scan the new view. Only when pan/zoom ACTUALLY changed (this function
+                // also runs for theme/contrast/flip), and debounced (600ms) so a drag
+                // re-OCRs once after it settles rather than on every frame.
+                const _viewKey = `${Math.round(state.panX)},${Math.round(state.panY)},${state.streamScale.toFixed(3)}`;
+                if (_viewKey !== _lastViewKey) {
+                    _lastViewKey = _viewKey;
+                    if (state.isFrozen && state.isTtsEnabled && state.ttsRegion === 'viewport') {
+                        scheduleFrozenRescan();
+                    }
+                }
             } else {
                 if (state.homeScale < 0.5) state.homeScale = 0.5;
                 setupScreen.style.transform = `scale(${state.homeScale})`;
@@ -5917,14 +5958,8 @@
             // Always update position after a mode/state change, then sync indicators
             applyReadingPosition();
             syncAllIndicators();
-
-            // When frozen with TTS active and the viewport region is used, a pan or
-            // zoom changes which text is visible.  Debounce a re-scan so we don't
-            // re-OCR on every pixel of a drag, only after the user settles.
-            // If OCR is already running we cancel it and restart from the new view.
-            if (state.isFrozen && state.isTtsEnabled && state.ttsRegion === 'viewport') {
-                scheduleFrozenRescan();
-            }
+            // (Viewport-region re-scan on pan/zoom now lives in updateVisuals(), which is
+            // the function actually called when the view moves — updateReadingTools() is not.)
         }
 
         // Lightweight position-only update — safe to call on every mousemove frame.
@@ -6143,6 +6178,16 @@
             }
         });
 
+        // Holds the live captureOnDemandFrame handler so the unfreeze branch can
+        // always remove it even if the frame reply never arrived.
+        let _pendingFreezeListener = null;
+        // Watchdog timer for the on-demand snapshot. If VDO.ninja never replies with a
+        // frame (e.g. Safari/Firefox, where its snapshot handler needs the Chromium-only
+        // MediaStreamTrackProcessor, or a transient hiccup), this fires the fallback so the
+        // OCR/TTS request doesn't hang forever with no feedback.
+        let _freezeFrameTimer = null;
+        const FREEZE_FRAME_TIMEOUT_MS = 1500;
+
         function toggleFreeze(onFreshFrame) {
             if (!document.body.classList.contains('video-active')) return;
 
@@ -6152,6 +6197,41 @@
                 if (latestFrame) {
                     freezeOverlay.style.backgroundImage = `url(${latestFrame})`;
                     freezeOverlay.classList.add('active');
+                }
+
+                // Local screen-share mode: there is no VDO.ninja iframe to round-trip a
+                // snapshot request through (the frame comes from a <video> element fed by
+                // getDisplayMedia). Capture it directly and run the OCR/TTS callback inline —
+                // no postMessage, no watchdog, no 1.5s wait. This is also the only frame
+                // source that works on Safari/Firefox, where the remote snapshot API can't.
+                if (isLocalSession) {
+                    const localVideo = document.getElementById('local-video');
+                    if (localVideo && localVideo.videoWidth) {
+                        try {
+                            const cvs = document.createElement('canvas');
+                            cvs.width  = localVideo.videoWidth;
+                            cvs.height = localVideo.videoHeight;
+                            cvs.getContext('2d').drawImage(localVideo, 0, 0, cvs.width, cvs.height);
+                            latestFrame = cvs.toDataURL('image/jpeg', 0.85);
+                            freezeOverlay.style.backgroundImage = `url(${latestFrame})`;
+                            freezeOverlay.classList.add('active');
+                        } catch (err) {
+                            dlog('freeze', { state: 'local_capture_failed', error: err?.message ?? String(err) });
+                        }
+                    }
+                    stopSnapshotPipeline();
+                    freezeBtn().classList.add('active-state');
+                    freezeBtn().setAttribute('aria-pressed', 'true');
+                    freezeBtn().setAttribute('aria-label', 'Unfreeze Frame');
+                    document.body.classList.add('is-frozen');
+                    syncTtsBarFrozenState();
+                    showStatus('Frame Frozen');
+                    if (typeof onFreshFrame === 'function') {
+                        if (latestFrame) onFreshFrame();
+                        else setTtsStatus('Couldn’t capture a frame — please try again');
+                    }
+                    savePrefs();
+                    return;
                 }
 
                 // Use a unique float cib so rapid freeze/unfreeze/refreeze within the
@@ -6165,7 +6245,9 @@
                     if (e.data.cib !== freezeCib) return;
                     if (frameConsumed) return;
                     frameConsumed = true;
+                    clearTimeout(_freezeFrameTimer);
                     window.removeEventListener('message', captureOnDemandFrame);
+                    _pendingFreezeListener = null;
                     latestFrame = e.data.frame;
                     // Always update the overlay image regardless of frozen state,
                     // so the latest frame is cached. Only call onFreshFrame if still frozen.
@@ -6176,6 +6258,7 @@
                         if (typeof onFreshFrame === 'function') onFreshFrame();
                     }
                 };
+                _pendingFreezeListener = captureOnDemandFrame;
                 window.addEventListener('message', captureOnDemandFrame);
 
                 if (knownStreamID) {
@@ -6184,6 +6267,39 @@
                     vdoFrame.contentWindow.postMessage({ getSnapshotBySlot: 0, cib: freezeCib }, '*');
                 }
 
+                // Watchdog: if no fresh frame arrives in time, stop waiting and recover.
+                // Falls back to the most recent cached frame when one exists; otherwise
+                // surfaces an actionable message instead of hanging silently. This is the
+                // path Safari/Firefox always hit (VDO.ninja's snapshot API can't run there).
+                clearTimeout(_freezeFrameTimer);
+                _freezeFrameTimer = setTimeout(() => {
+                    if (frameConsumed) return;
+                    frameConsumed = true;
+                    window.removeEventListener('message', captureOnDemandFrame);
+                    _pendingFreezeListener = null;
+                    if (!state.isFrozen) return; // user already unfroze
+
+                    if (latestFrame) {
+                        // Reuse the last frame we captured (pipeline or a prior freeze).
+                        freezeOverlay.style.backgroundImage = `url(${latestFrame})`;
+                        freezeOverlay.classList.add('active');
+                        dlog('freeze', { state: 'frame_timeout_fallback_cached', frameLen: latestFrame.length });
+                        if (typeof onFreshFrame === 'function') onFreshFrame();
+                    } else if (typeof onFreshFrame === 'function') {
+                        // No frame at all to read. If we auto-froze just to read, return to
+                        // live first so the user isn't left stuck on a frozen-but-blank view —
+                        // then set the message last so the unfreeze sync doesn't overwrite it.
+                        dlog('freeze', { state: 'frame_timeout_no_frame', snapshotUnsupported: SNAPSHOT_API_UNSUPPORTED });
+                        if (ttsAutoFroze) {
+                            ttsAutoFroze = false;
+                            toggleFreeze(); // unfreeze back to live
+                        }
+                        setTtsStatus((!isLocalSession && SNAPSHOT_API_UNSUPPORTED)
+                            ? 'Frame capture needs Chrome or Edge for remote streams — or use Screen Share'
+                            : 'Couldn’t capture a frame — please try again');
+                    }
+                }, FREEZE_FRAME_TIMEOUT_MS);
+
                 stopSnapshotPipeline();
                 freezeBtn().classList.add('active-state');
                 freezeBtn().setAttribute('aria-pressed', 'true');
@@ -6191,7 +6307,19 @@
                 document.body.classList.add('is-frozen');
                 syncTtsBarFrozenState();
                 showStatus("Frame Frozen");
+                // Immediate, accurate feedback while we wait for the snapshot to return,
+                // so an OCR/TTS request never looks like it did nothing. Set last so it
+                // wins over syncTtsBarFrozenState(); runOcr() overwrites it on success.
+                if (typeof onFreshFrame === 'function') {
+                    setTtsStatus('<span class="tts-spinner"></span>Capturing frame…');
+                }
             } else {
+                // Remove any pending frame-capture listener and watchdog that never fired
+                clearTimeout(_freezeFrameTimer);
+                if (_pendingFreezeListener) {
+                    window.removeEventListener('message', _pendingFreezeListener);
+                    _pendingFreezeListener = null;
+                }
                 freezeOverlay.classList.remove('active');
                 if (state.isScanActive) startSnapshotPipeline();
                 dlog('freeze', { state: 'unfrozen', scanActive: state.isScanActive });
@@ -7037,7 +7165,7 @@
         const TOOLBAR_ACTION_MAP = {
             'btn-zoom-in':             () => performZoom(1),
             'btn-zoom-out':            () => performZoom(-1),
-            'btn-freeze':              () => { if(state.isFrozen){ttsAutoFroze=false;clearTimeout(_rescanTimer);toggleFreeze();clearTtsState('Press ▶ to read live');}else{ttsAutoFroze=false;toggleFreeze(state.isTtsEnabled?runOcr:undefined);} },
+            'btn-freeze':              () => { if(state.isFrozen){ttsAutoFroze=false;clearTimeout(_rescanTimer);toggleFreeze();clearTtsState('Press ▶ to read live');}else{ttsAutoFroze=false;if(state.isTtsEnabled)_primeTtsAudio();toggleFreeze(state.isTtsEnabled?runOcr:undefined);} },
             'btn-fullscreen':          () => { toggleFullscreen(); closeAllDropdowns(); },
             'btn-hide':                () => toggleMenu(),
             'btn-advanced-settings':   () => { const m=document.getElementById('adv-settings-modal'); if(!m)return; m.classList.add('active'); m.setAttribute('aria-hidden','false'); document.getElementById('btn-advanced-settings')?.setAttribute('aria-expanded','true'); closeAllDropdowns(); requestAnimationFrame(()=>{ const f=m.querySelector('button,input,select,[tabindex]:not([tabindex="-1"])'); if(f)f.focus(); }); },
@@ -7288,12 +7416,11 @@
                 strip.appendChild(chip);
             });
 
-            // Drop-onto-empty strip
-            strip.addEventListener('dragover', _tcStripDragOver, { once: false });
-            strip.addEventListener('drop',     _tcStripDrop,     { once: false });
-            strip.addEventListener('dragleave', (e) => {
-                if (!strip.contains(e.relatedTarget)) strip.classList.remove('tc-drop-active');
-            }, { once: false });
+            // Drop-onto-empty strip — named references so the browser deduplicates
+            // repeated addEventListener calls across re-renders.
+            strip.addEventListener('dragover',   _tcStripDragOver,   { once: false });
+            strip.addEventListener('drop',       _tcStripDrop,       { once: false });
+            strip.addEventListener('dragleave',  _tcStripDragLeave,  { once: false });
         }
 
         function _tcMakeChip(item) {
@@ -7391,6 +7518,10 @@
                 const data = JSON.parse(e.dataTransfer.getData('text/plain'));
                 if (data.source === 'add') _tcAddItem(data.id);
             } catch(_) {}
+        }
+        function _tcStripDragLeave(e) {
+            const strip = document.getElementById('tc-preview-strip');
+            if (strip && !strip.contains(e.relatedTarget)) strip.classList.remove('tc-drop-active');
         }
 
         // ── CURRENT ITEMS LIST (tab 1) ─────────────────────────────────────
@@ -7997,7 +8128,7 @@
                         if (!payload._vdoMagnifierExport) {
                             throw new Error('This file doesn\'t look like a VDO Magnifier settings export.');
                         }
-                        if (payload.prefs && typeof payload.prefs === 'object') {
+                        if (payload.prefs && typeof payload.prefs === 'object' && !Array.isArray(payload.prefs)) {
                             localStorage.setItem('vdoMagnifierPrefs', JSON.stringify(payload.prefs));
                         }
                         if (Array.isArray(payload.themes) && payload.themes.length) {
@@ -8451,7 +8582,7 @@
                 return;
             }
             if (data.action === 'stream-id' && data.streamID) {
-                setSsStatusText(`Connected — stream ID: <code>${data.streamID}</code>`);
+                setSsStatusText(`Connected — stream ID: <code>${escapeHtml(String(data.streamID))}</code>`);
                 ssLiveConfirmCount++;
                 if (!ssIsLive) onSsLive('stream-id');
                 return;
@@ -8558,10 +8689,70 @@
         // ----------------------------------------------------------------
         // Tier 1: Native TextDetector
         // ----------------------------------------------------------------
-        // TextDetector requires a secure context (HTTPS or localhost).
-        // It is not available from file:// — hide the option in that case.
-        const NATIVE_OCR_SUPPORTED = ('TextDetector' in window) &&
-            (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+        // TextDetector requires a secure context (HTTPS or localhost) and is unavailable
+        // from file://. But presence is NOT sufficient: on desktop Chrome the TextDetector
+        // *constructor* exists behind chrome://flags/#enable-experimental-web-platform-features,
+        // yet detect() has no working text-recognition backend there (it ships only on
+        // Android/ChromeOS) and silently returns nothing. So we gate Native behind a real
+        // FUNCTIONAL PROBE — render a known word and require it back — instead of trusting
+        // ('TextDetector' in window). Until the probe resolves we treat Native as
+        // unavailable (safe default → Tesseract).
+        //
+        // NOTE: this is the Shape Detection API's TextDetector (OS-level OCR — Apple Vision /
+        // ML Kit), NOT Chrome's built-in AI model (window.ai), which the app does not use.
+        const _ocrSecureContext = (location.protocol === 'https:' ||
+            location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+        const _hasTextDetector = ('TextDetector' in window) && _ocrSecureContext;
+        let NATIVE_OCR_SUPPORTED = false; // set true only after probeNativeOcr() succeeds
+        let _nativeProbeResolved = false; // true once the probe has finished (pass or fail)
+
+        // Functional probe: TextDetector that returns our known probe word is real; one that
+        // returns nothing (the desktop-Chrome case) is a non-working stub we must not offer.
+        async function probeNativeOcr() {
+            if (!_hasTextDetector) return false;
+            try {
+                const c = document.createElement('canvas');
+                c.width = 320; c.height = 96;
+                const cx = c.getContext('2d');
+                cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
+                cx.fillStyle = '#000'; cx.font = 'bold 56px sans-serif';
+                cx.fillText('Reading', 14, 66);
+                const results = await new TextDetector().detect(c);
+                const got = (results || []).map(r => (r.rawValue || '')).join(' ').toLowerCase();
+                return /read/.test(got); // partial match tolerates minor OCR variance
+            } catch (e) {
+                return false;
+            }
+        }
+
+        // Diagnostic: record exactly WHY the "⚡ Native" engine is or isn't available, so
+        // a debug log (?debuglog) explains a missing Native radio instead of leaving it a
+        // mystery. The functional result is logged separately once the probe resolves.
+        dlog('native_ocr_detect', {
+            hasTextDetector: ('TextDetector' in window),
+            secureContext:   _ocrSecureContext,
+            protocol:        location.protocol,
+            // For comparison — BarcodeDetector ships on desktop Chrome while TextDetector's
+            // recognition backend does not, so this is often true while Native still fails:
+            hasBarcodeDetector: ('BarcodeDetector' in window),
+            note: 'functional probe pending',
+        });
+
+        // Run the probe; enable Native + refresh the engine UI only if it genuinely works.
+        probeNativeOcr().then(ok => {
+            NATIVE_OCR_SUPPORTED = ok;
+            _nativeProbeResolved = true;
+            dlog('native_ocr_probe', {
+                functional: ok,
+                reason: ok ? 'TextDetector recognised probe text'
+                           : (_hasTextDetector ? 'TextDetector present but detect() returned nothing (no desktop backend)'
+                                               : 'TextDetector unavailable or insecure context'),
+            });
+            // Refresh engine UI if TTS is already active; otherwise at least correct the
+            // picker visibility now so it's right whenever the settings panel is opened.
+            if (state.isTtsEnabled) initNativeEngineUI();
+            else updateOcrEnginePickerVisibility();
+        });
 
         function initNativeEngineUI() {
             const nativeLabel = document.getElementById('ocr-engine-native-label');
@@ -8575,13 +8766,36 @@
                     ttsOcrStatus.textContent = 'OCR engine: Native ⚡ (OS-level)';
                 }
             } else {
-                // Native unavailable — fall back to Tesseract silently
-                if (state.ocrEngine === 'native' || state.ocrEngine === 'auto') {
+                // Native unavailable (or probe not yet resolved) — keep the radio hidden.
+                nativeLabel.style.display = 'none';
+                // Only rewrite a saved 'native'/'auto' engine once the probe has DEFINITIVELY
+                // failed. Doing it before the probe resolves would transiently downgrade a
+                // valid Android/ChromeOS selection (where Native does work).
+                if (_nativeProbeResolved &&
+                    (state.ocrEngine === 'native' || state.ocrEngine === 'auto')) {
                     state.ocrEngine = 'tesseract';
                     const r = document.querySelector('input[name="ocr-engine"][value="tesseract"]');
                     if (r) r.checked = true;
                 }
             }
+            updateOcrEnginePickerVisibility();
+        }
+
+        // Hide the engine CHOICE UI (label + radios) when only one engine is actually usable
+        // — a single-option radio group is pointless clutter. Tesseract is always available;
+        // Native counts once its functional probe passes (Android/ChromeOS); RapidOCR counts
+        // once its models are present. The load-status line (#tts-ocr-status) stays visible
+        // since it reports progress/readiness rather than offering a choice. Re-runs whenever
+        // engine availability changes, so the picker appears/updates automatically.
+        function updateOcrEnginePickerVisibility() {
+            const label = document.getElementById('ocr-engine-label');
+            const group = document.querySelector('.radio-group[aria-labelledby="ocr-engine-label"]');
+            const rapidLabel = document.getElementById('ocr-engine-rapidocr-label');
+            if (rapidLabel) rapidLabel.style.display = RAPIDOCR_AVAILABLE ? '' : 'none';
+            // ≥2 engines → show the picker (Tesseract is always one).
+            const showPicker = NATIVE_OCR_SUPPORTED || RAPIDOCR_AVAILABLE;
+            if (label) label.style.display = showPicker ? '' : 'none';
+            if (group) group.style.display = showPicker ? '' : 'none';
         }
 
         // Run Native TextDetector on a canvas.
@@ -8600,83 +8814,236 @@
         }
 
         // ----------------------------------------------------------------
-        // Tier 2: Tesseract.js v5
+        // OCR LANGUAGE REGISTRY (shared by Tesseract + RapidOCR)
         // ----------------------------------------------------------------
+        // `code` is the Tesseract language code. `local:true` means its traineddata is bundled
+        // in /tesseract (offline, instant); everything else streams from the tessdata CDN on
+        // demand. `rapid:true` means RapidOCR's bundled model reads it (its model is the
+        // Chinese PP-OCRv4 net, which covers English + Chinese) — for other languages RapidOCR
+        // has no compatible model, so the UI steers the user to Tesseract.
+        const TESSDATA_CDN = 'https://tessdata.projectnaptha.com/4.0.0';
+        const LANGUAGE_REGISTRY = [
+            { code: 'eng',     name: 'English',              local: true,  rapid: true  },
+            { code: 'spa',     name: 'Spanish',              local: true,  rapid: false },
+            { code: 'fra',     name: 'French',               local: true,  rapid: false },
+            { code: 'deu',     name: 'German',               local: false, rapid: false },
+            { code: 'ita',     name: 'Italian',              local: false, rapid: false },
+            { code: 'por',     name: 'Portuguese',           local: false, rapid: false },
+            { code: 'nld',     name: 'Dutch',                local: false, rapid: false },
+            { code: 'rus',     name: 'Russian',              local: false, rapid: false },
+            { code: 'chi_sim', name: 'Chinese (Simplified)', local: false, rapid: true  },
+            { code: 'jpn',     name: 'Japanese',             local: false, rapid: false },
+            { code: 'kor',     name: 'Korean',               local: false, rapid: false },
+            { code: 'ara',     name: 'Arabic',               local: false, rapid: false },
+        ];
+        function langEntry(code) { return LANGUAGE_REGISTRY.find(l => l.code === code) || LANGUAGE_REGISTRY[0]; }
+        function langName(code)  { return langEntry(code).name; }
+
+        // ----------------------------------------------------------------
+        // Tier 2: Tesseract.js v5 — bundled langs LOCAL, others from the tessdata CDN.
+        // ----------------------------------------------------------------
+        // All assets (library, worker, WASM core, language data) are bundled in the repo's
+        // /tesseract folder, so OCR works fully offline and loads faster than the CDN. Still
+        // lazy: nothing is requested until the first time TTS actually needs the engine.
+        //
+        // Minimal WASM-SIMD probe (canonical wasm-feature-detect module bytes). We pick the
+        // exact core file ourselves and pass a corePath that ENDS IN .js so Tesseract uses it
+        // verbatim — its directory-mode auto-selection can otherwise request a "*-lstm" core
+        // variant that isn't bundled, which would 404.
+        function _wasmSimdSupported() {
+            try {
+                return WebAssembly.validate(new Uint8Array([
+                    0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11
+                ]));
+            } catch (e) { return false; }
+        }
+
+        // Inject the Tesseract library once (separate from worker/lang, which can change).
+        let _tessLibPromise = null;
+        function _injectTesseractLib(libUrl) {
+            if (window.Tesseract) return Promise.resolve();
+            if (_tessLibPromise) return _tessLibPromise;
+            _tessLibPromise = new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = libUrl;
+                s.onload = () => resolve();
+                s.onerror = () => { _tessLibPromise = null; reject(new Error('Tesseract library failed to load')); };
+                document.head.appendChild(s);
+            });
+            return _tessLibPromise;
+        }
+
+        // Resolve where a language's traineddata lives: the bundled /tesseract folder if present
+        // (offline, instant), else the tessdata CDN. HEAD-probe so it's robust to which .gz
+        // files are actually bundled.
+        async function _tessLangPath(lang, tessBase) {
+            try {
+                const r = await fetch(tessBase + lang + '.traineddata.gz', { method: 'HEAD' });
+                if (r.ok) return { path: tessBase.replace(/\/$/, ''), local: true };
+            } catch (e) { /* fall through to CDN */ }
+            return { path: TESSDATA_CDN, local: false };
+        }
+
+        // Language-aware lazy loader. Loads (or RE-loads, on language change) the Tesseract
+        // worker for state.ocrLang. Bundled langs load locally; others stream from the CDN.
+        let _tessLoadedLang = null;   // language the current worker was built for
+        let _tessLoadPromise = null;  // in-flight load (any language)
         function loadTesseract() {
-            if (tesseractReady || tesseractLoading) return Promise.resolve();
+            const lang = state.ocrLang || 'eng';
+            if (tesseractReady && _tessLoadedLang === lang) return Promise.resolve();
+            // A load is already running — wait for it, then re-evaluate (handles the user
+            // switching language mid-load: after the in-flight finishes we reload for the new one).
+            if (_tessLoadPromise) return _tessLoadPromise.then(() => loadTesseract());
+
             tesseractLoading = true;
             updateTtsControls();
-            ttsOcrStatus.innerHTML = '<span class="tts-spinner"></span>Loading OCR engine…';
-            dlog('tesseract', 'loading');
+            _tessLoadPromise = (async () => {
+                try {
+                    const TESS_BASE  = new URL('tesseract/', window.location.href).href;
+                    const WORKER_URL = TESS_BASE + 'worker.min.js';
+                    const simd       = _wasmSimdSupported();
+                    const CORE_URL   = TESS_BASE + (simd ? 'tesseract-core-simd.wasm.js' : 'tesseract-core.wasm.js');
+                    const { path: LANG_PATH, local } = await _tessLangPath(lang, TESS_BASE);
+                    dlog('tesseract', { loading: local ? 'local' : 'cdn', lang, langPath: LANG_PATH, simd });
 
-            const T_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/';
-            const C_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v5.0.0';
-            const L_CDN = 'https://tessdata.projectnaptha.com/4.0.0';
+                    ttsOcrStatus.innerHTML = '<span class="tts-spinner"></span>Loading OCR engine…';
+                    await _injectTesseractLib(TESS_BASE + 'tesseract.min.js');
 
-            return new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = T_CDN + 'tesseract.min.js';
-
-                script.onload = async () => {
-                    try {
-                        ttsOcrStatus.innerHTML = '<span class="tts-spinner"></span>Fetching worker…';
-                        const workerText = await fetch(T_CDN + 'worker.min.js')
-                            .then(r => { if (!r.ok) throw new Error(`Worker fetch ${r.status}`); return r.text(); });
-                        const workerBlobURL = URL.createObjectURL(
-                            new Blob([workerText], { type: 'application/javascript' })
-                        );
-
-                        ttsOcrStatus.innerHTML = '<span class="tts-spinner"></span>Initialising OCR engine…';
-                        tesseractWorker = await Tesseract.createWorker('eng', 1, {
-                            workerPath:    workerBlobURL,
-                            corePath:      C_CDN,
-                            langPath:      L_CDN,
-                            workerBlobURL: false,
-                            logger: (m) => {
-                                if (m.status === 'loading tesseract core' ||
-                                    m.status === 'loading language traineddata') {
-                                    ttsOcrStatus.innerHTML = `<span class="tts-spinner"></span>${m.status}…`;
-                                }
-                                dlog('tesseract_progress', { status: m.status, progress: m.progress });
-                            }
-                        });
-                        URL.revokeObjectURL(workerBlobURL);
-
-                        // PSM 1: auto page segmentation with OSD — better than default PSM 3
-                        // for screen captures which may have mixed orientations.
-                        // preserve_interword_spaces keeps multi-word gaps intact.
-                        await tesseractWorker.setParameters({
-                            tessedit_pageseg_mode: Tesseract.PSM.AUTO_OSD,
-                            preserve_interword_spaces: '1',
-                        });
-
-                        tesseractReady   = true;
-                        tesseractLoading = false;
-                        ttsOcrStatus.textContent = 'OCR engine: Tesseract.js v5 ✓';
-                        dlog('tesseract', 'ready');
-                        updateTtsControls();
-                        resolve();
-                    } catch(err) {
-                        tesseractLoading = false;
-                        const msg = err instanceof Error ? err.message : String(err);
-                        ttsOcrStatus.textContent = `OCR engine: failed — ${msg}`;
-                        dlog('tesseract', { error: msg });
-                        updateTtsControls();
-                        reject(err);
+                    // Switching language → tear down the old worker before building the new one.
+                    if (tesseractWorker && _tessLoadedLang !== lang) {
+                        try { await tesseractWorker.terminate(); } catch (e) {}
+                        tesseractWorker = null; tesseractReady = false;
                     }
-                };
 
-                script.onerror = () => {
-                    tesseractLoading = false;
-                    ttsOcrStatus.textContent = 'OCR engine: CDN unreachable — check internet connection';
-                    dlog('tesseract', { error: 'script load failed' });
+                    ttsOcrStatus.innerHTML = `<span class="tts-spinner"></span>Loading ${langName(lang)} model${local ? '' : ' (CDN)'}…`;
+                    const workerText = await fetch(WORKER_URL)
+                        .then(r => { if (!r.ok) throw new Error(`Worker fetch ${r.status}`); return r.text(); });
+                    const workerBlobURL = URL.createObjectURL(new Blob([workerText], { type: 'application/javascript' }));
+
+                    tesseractWorker = await Tesseract.createWorker(lang, 1, {
+                        workerPath:    workerBlobURL,
+                        corePath:      CORE_URL,   // explicit .js → used verbatim (no -lstm guess)
+                        langPath:      LANG_PATH,  // local folder or tessdata CDN
+                        workerBlobURL: false,
+                        gzip:          true,       // traineddata is *.traineddata.gz (local and CDN)
+                        logger: (m) => {
+                            if (m.status === 'loading tesseract core' || m.status === 'loading language traineddata') {
+                                ttsOcrStatus.innerHTML = `<span class="tts-spinner"></span>${m.status}…`;
+                            }
+                            dlog('tesseract_progress', { status: m.status, progress: m.progress });
+                        }
+                    });
+                    URL.revokeObjectURL(workerBlobURL);
+
+                    // PSM 1: auto page segmentation with OSD; keep multi-word spacing.
+                    await tesseractWorker.setParameters({
+                        tessedit_pageseg_mode: Tesseract.PSM.AUTO_OSD,
+                        preserve_interword_spaces: '1',
+                    });
+
+                    tesseractReady = true; tesseractLoading = false; _tessLoadedLang = lang;
+                    ttsOcrStatus.textContent = `OCR engine: Tesseract ✓ — ${langName(lang)}${local ? '' : ' (CDN)'}${simd ? ', SIMD' : ''}`;
+                    dlog('tesseract', { ready: true, lang });
                     updateTtsControls();
-                    reject(new Error('Tesseract CDN load failed'));
-                };
-
-                document.head.appendChild(script);
-            });
+                } catch (err) {
+                    tesseractLoading = false;
+                    const msg = err instanceof Error ? err.message : String(err);
+                    ttsOcrStatus.textContent = `OCR engine: failed — ${msg}`;
+                    dlog('tesseract', { error: msg, lang });
+                    updateTtsControls();
+                    throw err;
+                } finally {
+                    _tessLoadPromise = null;
+                }
+            })();
+            return _tessLoadPromise;
         }
+
+        // ----------------------------------------------------------------
+        // Tier 3: RapidOCR (ONNX Runtime Web · WebGPU) — optional, self-contained in /rapidocr
+        // ----------------------------------------------------------------
+        // GPU-accelerated PP-OCR pipeline. All logic + runtime live in /rapidocr (rapidocr.js
+        // loads its own onnxruntime-web), so the main file stays small. Availability depends on
+        // the user having added the model files — we HEAD-probe for them and only offer the
+        // engine when present. Fully lazy: the ~22 MB runtime + models load only when selected.
+        const RAPIDOCR_BASE = new URL('rapidocr/', window.location.href).href;
+        let RAPIDOCR_AVAILABLE = false;
+        let _rapidProbeResolved = false;  // true once the model HEAD-probe finishes
+        let _rapidOcrReady = false;
+        let _rapidOcrInitPromise = null;
+
+        async function probeRapidOcr() {
+            // Required: det + rec + dict (cls is optional). Any miss → engine not offered.
+            try {
+                const need = ['models/det.onnx', 'models/rec.onnx', 'models/dict.txt'];
+                const oks = await Promise.all(need.map(f =>
+                    fetch(RAPIDOCR_BASE + f, { method: 'HEAD' }).then(r => r.ok).catch(() => false)));
+                return oks.every(Boolean);
+            } catch (e) { return false; }
+        }
+
+        function loadRapidOcr() {
+            if (_rapidOcrReady) return Promise.resolve();
+            if (_rapidOcrInitPromise) return _rapidOcrInitPromise;
+            _rapidOcrInitPromise = (async () => {
+                ttsOcrStatus.innerHTML = '<span class="tts-spinner"></span>Loading RapidOCR engine…';
+                updateTtsControls();
+                dlog('rapidocr', 'loading');
+                if (!window.RapidOCR) {
+                    await new Promise((resolve, reject) => {
+                        const s = document.createElement('script');
+                        s.src = RAPIDOCR_BASE + 'rapidocr.js';
+                        s.onload = () => resolve();
+                        s.onerror = () => reject(new Error('rapidocr.js failed to load'));
+                        document.head.appendChild(s);
+                    });
+                }
+                await window.RapidOCR.init({
+                    base: RAPIDOCR_BASE,
+                    onStatus: (m) => { if (m && m !== 'ready') ttsOcrStatus.innerHTML = `<span class="tts-spinner"></span>${m}`; },
+                });
+                _rapidOcrReady = true;
+                ttsOcrStatus.textContent = `OCR engine: RapidOCR ✓ (${window.RapidOCR.getBackend()})`;
+                dlog('rapidocr', { ready: true, backend: window.RapidOCR.getBackend() });
+                updateTtsControls();
+            })();
+            // Allow a retry if loading/init fails (e.g. transient or bad model file).
+            _rapidOcrInitPromise.catch((err) => {
+                _rapidOcrInitPromise = null;
+                ttsOcrStatus.textContent = 'OCR engine: RapidOCR failed — ' + (err && err.message ? err.message : err);
+                dlog('rapidocr', { error: String(err && err.message || err) });
+                updateTtsControls();
+            });
+            return _rapidOcrInitPromise;
+        }
+
+        async function runRapidOcr(canvas) {
+            await loadRapidOcr();
+            const res = await window.RapidOCR.recognize(canvas);
+            // RapidOCR detects LINE-level boxes. Explode each line into its words, every word
+            // carrying that LINE's box, so the existing word-matched highlighter (findOcrWord →
+            // positionWordHighlight) lights up the current LINE as it reads — the box spans the
+            // whole line and jumps to the next line's box as reading crosses into it. Box coords
+            // are in the OCR-canvas space (same as Tesseract word boxes), so the existing
+            // ocrCropInfo → overlay mapping applies identically.
+            const words = [];
+            for (const ln of (res.lines || [])) {
+                const toks = (ln.text || '').split(/\s+/).filter(Boolean);
+                for (const t of toks) {
+                    words.push({ text: t, x0: ln.x0, y0: ln.y0, x1: ln.x1, y1: ln.y1 });
+                }
+            }
+            return { text: res.text || '', words };
+        }
+
+        // Probe for models; reveal the RapidOCR option only if usable.
+        probeRapidOcr().then(ok => {
+            RAPIDOCR_AVAILABLE = ok;
+            _rapidProbeResolved = true;
+            dlog('rapidocr_detect', { available: ok, base: RAPIDOCR_BASE });
+            if (state.isTtsEnabled) initOcrEngineUI();
+            else updateOcrEnginePickerVisibility();
+        });
 
         // --- Build a greyscale+binarised canvas from the correct region ---
         // Returns a data object used both as ocrCropInfo and as the canvas source for Tesseract.
@@ -8691,8 +9058,9 @@
         //      in overlay-local coords (at scale=1).
         //   3. Map that slice back to frame pixel coords.
         function buildOcrCanvas(frameDataUrl) {
-            return new Promise((resolve) => {
+            return new Promise((resolve, reject) => {
                 const img = new Image();
+                img.onerror = () => reject(new Error('Frame image failed to load'));
                 img.onload = () => {
                     const frameW = img.naturalWidth;
                     const frameH = img.naturalHeight;
@@ -8849,6 +9217,7 @@
                 statusText = (onHome && state.isTtsEnabled) ? 'Press ▶ to read page' : 'Ready';
             }
             stopKeepalive();
+            stopAudioKeepAlive();
             _stopTtsFollowLerp();
             _ttsFollowTargetY = null;
             window.speechSynthesis.cancel();
@@ -8872,10 +9241,14 @@
 
         // --- Run OCR on latestFrame — dispatches to Native or Tesseract ---
         async function runOcr() {
+            if (state.isOcrRunning) return;
             if (!latestFrame) {
-                setTtsStatus('No frame yet — try again');
+                setTtsStatus((!isLocalSession && SNAPSHOT_API_UNSUPPORTED)
+                    ? 'Frame capture needs Chrome or Edge for remote streams — or use Screen Share'
+                    : 'No frame yet — try again');
                 return;
             }
+            state.isOcrRunning = true;
 
             window.speechSynthesis.cancel();
             ttsIsPlaying = false;
@@ -8885,26 +9258,53 @@
             ttsUnitIndex = 0;
             ocrCropInfo = null;
 
-            // Resolve which engine to use
-            const useNative = (state.ocrEngine === 'native') ||
-                              (state.ocrEngine === 'auto' && NATIVE_OCR_SUPPORTED);
+            // Resolve which engine to use. RapidOCR only when explicitly chosen AND its models
+            // are present. Native requires the functional probe to have PASSED — even when the
+            // user explicitly picked 'native' — so a stale saved preference (or the desktop-
+            // Chrome flag trap) can never route to a TextDetector that recognises nothing.
+            // Anything not confirmed falls through to Tesseract.
+            const useRapid  = (state.ocrEngine === 'rapidocr') && RAPIDOCR_AVAILABLE;
+            const useNative = !useRapid && NATIVE_OCR_SUPPORTED &&
+                              (state.ocrEngine === 'native' || state.ocrEngine === 'auto');
 
-            setTtsStatus(`<span class="tts-spinner"></span>${useNative ? 'Reading…' : 'Running OCR…'}`);
+            setTtsStatus(`<span class="tts-spinner"></span>${(useNative || useRapid) ? 'Reading…' : 'Running OCR…'}`);
             updateTtsControls();
 
             try {
                 const ocrData = await buildOcrCanvas(latestFrame);
                 ocrCropInfo = ocrData;
                 dlog('ocr_start', {
-                    engine: useNative ? 'native' : 'tesseract',
+                    engine: useRapid ? 'rapidocr' : (useNative ? 'native' : 'tesseract'),
                     srcX: ocrData.srcX, srcY: ocrData.srcY,
                     srcW: ocrData.srcW, srcH: ocrData.srcH,
                     ocrW: ocrData.ocrW, ocrH: ocrData.ocrH,
                 });
 
-                let text, words;
-                if (useNative) {
+                let text, words, engineUsed = useRapid ? 'rapidocr' : (useNative ? 'native' : 'tesseract');
+                if (useRapid) {
+                    ({ text, words } = await runRapidOcr(ocrData.canvas));
+                    // If RapidOCR finds nothing usable, fall back to Tesseract so we never go silent.
+                    if (!/[a-zA-Z0-9]{2,}/.test(text || '')) {
+                        dlog('ocr_rapid_empty', { fallback: 'tesseract', rapidChars: (text || '').length });
+                        setTtsStatus('<span class="tts-spinner"></span>RapidOCR found no text — using Tesseract…');
+                        ({ text, words } = await runTesseractOcr(ocrData.canvas));
+                        text = cleanOcrText(text);
+                        words = words.filter(w => /[a-zA-Z0-9]{2,}/.test(w.text));
+                        engineUsed = 'tesseract (rapidocr fallback)';
+                    }
+                } else if (useNative) {
                     ({ text, words } = await runNativeOcr(ocrData.canvas));
+                    // Safety net: if Native yields no usable text (it can silently return
+                    // nothing — e.g. a TextDetector that passed the probe but fails on a real
+                    // frame), fall back to Tesseract for this read so we never go silent.
+                    if (!/[a-zA-Z0-9]{2,}/.test(text || '')) {
+                        dlog('ocr_native_empty', { fallback: 'tesseract', nativeChars: (text || '').length });
+                        setTtsStatus('<span class="tts-spinner"></span>Native found no text — using Tesseract…');
+                        ({ text, words } = await runTesseractOcr(ocrData.canvas));
+                        text = cleanOcrText(text);
+                        words = words.filter(w => /[a-zA-Z0-9]{2,}/.test(w.text));
+                        engineUsed = 'tesseract (native fallback)';
+                    }
                 } else {
                     ({ text, words } = await runTesseractOcr(ocrData.canvas));
                     // Clean Tesseract output — remove symbol-garbage lines that
@@ -8916,7 +9316,7 @@
                     words = words.filter(w => /[a-zA-Z0-9]{2,}/.test(w.text));
                 }
 
-                dlog('ocr_done', { engine: useNative ? 'native' : 'tesseract', chars: text.length, words: words.length });
+                dlog('ocr_done', { engine: engineUsed, chars: text.length, words: words.length });
 
                 if (!text) {
                     setTtsStatus('No text detected');
@@ -8938,6 +9338,8 @@
                 console.error('[VDOMag OCR]', err);
                 dlog('ocr_error', err?.message ?? String(err));
                 updateTtsControls();
+            } finally {
+                state.isOcrRunning = false;
             }
         }
 
@@ -8999,9 +9401,16 @@
         function startKeepalive() {
             clearInterval(_ttsKeepaliveTimer);
             _ttsKeepaliveTimer = setInterval(() => {
-                // Guard: only fire if the page is visible and synthesis is actively speaking.
-                // document.hidden is false when the tab is in the foreground.
-                if (!document.hidden && ttsIsPlaying && window.speechSynthesis.speaking) {
+                // Guard: only fire if the page is visible and synthesis is actively speaking
+                // AND is not currently paused. The `!paused` check is critical: a hardware
+                // media key (or anything else) can pause speechSynthesis without going through
+                // our UI, leaving `ttsIsPlaying` true. Without this guard the keepalive's
+                // resume() would silently un-pause it ~10s later — the "auto-resume after
+                // pausing" bug. Because our own pause()+resume() below runs synchronously,
+                // `paused` is false again by the next tick, so this never blocks the keepalive
+                // during normal playback — only when the user has genuinely paused.
+                if (!document.hidden && ttsIsPlaying &&
+                    window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
                     window.speechSynthesis.pause();
                     window.speechSynthesis.resume();
                 }
@@ -9011,6 +9420,50 @@
         function stopKeepalive() {
             clearInterval(_ttsKeepaliveTimer);
             _ttsKeepaliveTimer = null;
+        }
+
+        // --- Audio-device keep-warm (reduces Bluetooth gaps/clicks between sentences) ---
+        // The Web Speech API speaks each unit as a separate utterance. On Bluetooth/wireless
+        // output, macOS lets the audio device idle during the silence between utterances; it
+        // then has to wake and re-buffer for the next one, which is heard as a noticeable gap
+        // and a wake "click/pop". (On wired/local output the gap is only a few ms — that's why
+        // this is most audible on headphones.) Running a continuous, inaudible WebAudio tone
+        // through the SAME default output device keeps the link "hot" so consecutive sentences
+        // play back-to-back without the device re-negotiating.
+        //
+        // Lazily created and only while actively reading. The context must be created/resumed
+        // during a user gesture (autoplay policy) — _primeTtsAudio() is called from the Play
+        // button handler for exactly that reason.
+        let _ttsAudioCtx = null, _ttsAudioOsc = null;
+        function _primeTtsAudio() {
+            try {
+                if (!_ttsAudioCtx) {
+                    const Ctx = window.AudioContext || window.webkitAudioContext;
+                    if (!Ctx) return;
+                    _ttsAudioCtx = new Ctx();
+                }
+                if (_ttsAudioCtx.state === 'suspended') _ttsAudioCtx.resume().catch(() => {});
+            } catch (e) { /* WebAudio unavailable — degrade silently */ }
+        }
+        function startAudioKeepAlive() {
+            _primeTtsAudio();
+            if (!_ttsAudioCtx || _ttsAudioOsc) return; // already running
+            try {
+                const osc = _ttsAudioCtx.createOscillator();
+                const gain = _ttsAudioCtx.createGain();
+                gain.gain.value = 0.0001;   // ~-80 dB: inaudible, but non-zero so the OS doesn't
+                osc.frequency.value = 40;   // treat it as digital silence and power the link down
+                osc.connect(gain).connect(_ttsAudioCtx.destination);
+                osc.start();
+                _ttsAudioOsc = osc;
+            } catch (e) { /* no-op */ }
+        }
+        function stopAudioKeepAlive() {
+            if (_ttsAudioOsc) {
+                try { _ttsAudioOsc.stop(); } catch (e) {}
+                try { _ttsAudioOsc.disconnect(); } catch (e) {}
+                _ttsAudioOsc = null;
+            }
         }
 
         // Visibility change handler — suspends/resumes synthesis and the keepalive
@@ -9028,7 +9481,10 @@
             if (!state.isTtsEnabled) return;
 
             if (document.hidden) {
-                _ttsWasPlayingBeforeHide = ttsIsPlaying && window.speechSynthesis.speaking;
+                // `!paused` so a user/media-key pause isn't auto-resumed when the tab regains
+                // focus — only genuinely-playing synthesis is restored.
+                _ttsWasPlayingBeforeHide = ttsIsPlaying && window.speechSynthesis.speaking &&
+                                           !window.speechSynthesis.paused;
                 if (_ttsWasPlayingBeforeHide) {
                     window.speechSynthesis.pause();
                     stopKeepalive();
@@ -9134,6 +9590,7 @@
             ttsIsPlaying = true;
             window.speechSynthesis.speak(utt);
             startKeepalive();
+            startAudioKeepAlive(); // keep the audio device warm across sentence boundaries
             setTtsStatus(`${idx + 1} / ${ttsUnits.length}`);
             updateTtsControls();
             updateTtsTextPanelActive();
@@ -9576,6 +10033,7 @@
 
         function stopTts() {
             stopKeepalive();
+            stopAudioKeepAlive();
             _stopTtsFollowLerp();
             window.speechSynthesis.cancel();
             ttsIsPlaying = false;
@@ -9680,34 +10138,52 @@
             return { text, words };
         }
 
-        // Wire up engine-selector radios + init native UI after DOM is ready
+        // Wire up engine-selector radios + init native UI after DOM is ready.
+        // Listeners are bound ONCE (this function is re-called whenever engine availability
+        // changes — native/rapidocr probes resolving — to re-sync checked state + visibility).
+        let _ocrRadiosWired = false;
         function initOcrEngineUI() {
             initNativeEngineUI();
-            document.querySelectorAll('input[name="ocr-engine"]').forEach(r => {
-                r.addEventListener('change', () => {
-                    state.ocrEngine = r.value;
-                    savePrefs();
-                    if (r.value === 'native') {
-                        ttsOcrStatus.textContent = NATIVE_OCR_SUPPORTED
-                            ? 'OCR engine: Native ⚡ (OS-level)'
-                            : 'OCR engine: Native not available in this browser';
-                        // No pre-load needed — Native is instant
-                    } else {
-                        ttsOcrStatus.textContent = tesseractReady
-                            ? 'OCR engine: Tesseract.js v5 ✓'
-                            : 'OCR engine: not loaded';
-                    }
-                    // If frozen, re-run OCR with new engine immediately
-                    if (state.isFrozen && state.isTtsEnabled) {
-                        clearTtsState('<span class="tts-spinner"></span>Switching engine…');
-                        setTimeout(runOcr, 50);
-                    }
+            // RapidOCR opted out if its models disappeared after the probe resolved.
+            if (_rapidProbeResolved && !RAPIDOCR_AVAILABLE && state.ocrEngine === 'rapidocr') {
+                state.ocrEngine = 'tesseract';
+            }
+            if (!_ocrRadiosWired) {
+                _ocrRadiosWired = true;
+                document.querySelectorAll('input[name="ocr-engine"]').forEach(r => {
+                    r.addEventListener('change', () => {
+                        state.ocrEngine = r.value;
+                        savePrefs();
+                        if (r.value === 'rapidocr') {
+                            ttsOcrStatus.textContent = _rapidOcrReady
+                                ? `OCR engine: RapidOCR ✓ (${window.RapidOCR.getBackend()})`
+                                : 'OCR engine: RapidOCR — loading…';
+                            // Opt-in engine: start the (heavy) download now so the first read isn't delayed.
+                            if (!_rapidOcrReady) loadRapidOcr().catch(() => {});
+                        } else if (r.value === 'native') {
+                            ttsOcrStatus.textContent = NATIVE_OCR_SUPPORTED
+                                ? 'OCR engine: Native ⚡ (OS-level)'
+                                : 'OCR engine: Native not available in this browser';
+                        } else {
+                            ttsOcrStatus.textContent = tesseractReady
+                                ? 'OCR engine: Tesseract.js v5 ✓ (local)'
+                                : 'OCR engine: not loaded';
+                            if (!tesseractReady && !tesseractLoading) loadTesseract().catch(() => {});
+                        }
+                        // If frozen, re-run OCR with the new engine immediately
+                        if (state.isFrozen && state.isTtsEnabled) {
+                            clearTtsState('<span class="tts-spinner"></span>Switching engine…');
+                            setTimeout(runOcr, 50);
+                        }
+                    });
                 });
-                if (r.value === state.ocrEngine ||
-                    (state.ocrEngine === 'auto' && r.value === (NATIVE_OCR_SUPPORTED ? 'native' : 'tesseract'))) {
-                    r.checked = true;
-                }
+            }
+            // Re-sync which radio is checked (availability may have changed since last call).
+            document.querySelectorAll('input[name="ocr-engine"]').forEach(r => {
+                r.checked = (r.value === state.ocrEngine) ||
+                    (state.ocrEngine === 'auto' && r.value === (NATIVE_OCR_SUPPORTED ? 'native' : 'tesseract'));
             });
+            updateOcrEnginePickerVisibility();
         }
 
         // --- TTS bar visibility ---
@@ -9957,11 +10433,15 @@
                 // Pause — user is taking manual control; cancel auto-return to live
                 ttsAutoFroze = false;
                 window.speechSynthesis.cancel();
+                stopAudioKeepAlive();
                 ttsIsPlaying = false;
                 hideWordHighlight();
                 updateTtsControls();
                 setTtsStatus('Paused');
             } else {
+                // Create/resume the audio keep-warm context now, while we still have the user
+                // gesture (the live-video path awaits OCR before speaking, which would lose it).
+                _primeTtsAudio();
                 if (!isVideoActive) {
                     // Home screen
                     if (ttsUnits.length) speakUnit(ttsUnitIndex);
