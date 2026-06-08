@@ -857,17 +857,20 @@
            ================================================================ */
 
         #tts-bar {
+            /* Sizes are px-bases multiplied by --ui-scale so the bar (and its
+               attached panels) track the Menubar Size control, exactly like the
+               toolbar — NOT the content text-scale. See the html{} comment. */
             display: none; /* shown by JS when tts is enabled */
             position: fixed;
-            bottom: 18px;
+            bottom: calc(18px * var(--ui-scale));
             left: 50%;
             transform: translateX(-50%);
             z-index: 200;
             background: var(--panel-bg);
             border: 2px solid var(--border-color);
-            border-radius: 36px;
-            padding: 8px 14px;
-            gap: 6px;
+            border-radius: calc(36px * var(--ui-scale));
+            padding: calc(8px * var(--ui-scale)) calc(14px * var(--ui-scale));
+            gap: calc(6px * var(--ui-scale));
             align-items: center;
             flex-direction: row;
             box-shadow: 0 4px 24px rgba(0,0,0,0.6);
@@ -913,8 +916,8 @@
             color: var(--text-color);
             border: 1.5px solid var(--border-color);
             border-radius: 50%;
-            width: 38px;
-            height: 38px;
+            width: calc(38px * var(--ui-scale));
+            height: calc(38px * var(--ui-scale));
             display: flex;
             align-items: center;
             justify-content: center;
@@ -922,6 +925,12 @@
             flex-shrink: 0;
             transition: background 0.15s, color 0.15s;
             padding: 0;
+        }
+        /* Icons sized off the px base so they grow with the menubar scale too.
+           CSS width/height override the SVG's width/height attributes. */
+        .tts-btn svg {
+            width: calc(16px * var(--ui-scale));
+            height: calc(16px * var(--ui-scale));
         }
         .tts-btn:hover:not(:disabled) {
             background: var(--button-hover);
@@ -938,38 +947,73 @@
 
         /* The main read/pause button is slightly larger */
         #btn-tts-playpause {
-            width: 46px;
-            height: 46px;
+            width: calc(46px * var(--ui-scale));
+            height: calc(46px * var(--ui-scale));
+        }
+        #btn-tts-playpause svg {
+            width: calc(20px * var(--ui-scale));
+            height: calc(20px * var(--ui-scale));
         }
 
+        /* Drag handle (grip) at the leading edge of the bar — lets the user
+           pick the bar up and place it anywhere on screen. */
+        .tts-grip {
+            background: none;
+            border: none;
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            width: calc(20px * var(--ui-scale));
+            height: calc(38px * var(--ui-scale));
+            padding: 0;
+            cursor: grab;
+            opacity: 0.55;
+            border-radius: calc(8px * var(--ui-scale));
+            transition: opacity 0.15s, background 0.15s;
+            touch-action: none;
+        }
+        .tts-grip:hover { opacity: 1; background: var(--button-hover); color: var(--button-hover-text); }
+        .tts-grip:focus-visible { outline: 3px solid var(--text-color); outline-offset: 2px; opacity: 1; }
+        .tts-grip svg { width: calc(12px * var(--ui-scale)); height: calc(22px * var(--ui-scale)); }
+        #tts-bar.tts-dragging { cursor: grabbing; }
+        #tts-bar.tts-dragging .tts-grip { cursor: grabbing; opacity: 1; }
+
         #tts-status-label {
-            font-size: 0.78rem;
+            font-size: calc(12.5px * var(--ui-scale)); /* 0.78rem base, px so it tracks --ui-scale not text-scale */
             opacity: 0.75;
             white-space: nowrap;
-            max-width: 180px;
+            max-width: calc(180px * var(--ui-scale));
             overflow: hidden;
             text-overflow: ellipsis;
-            padding: 0 4px;
+            padding: 0 calc(4px * var(--ui-scale));
             pointer-events: none;
         }
 
-        /* Settings panel that opens from the cog button */
+        /* Settings panel that opens from the cog button.
+           Sizes track --ui-scale (the menubar size) like the bar itself; the
+           vh/vw caps are divided by the scale so the panel never overflows the
+           viewport even at large scales. */
         #tts-settings-panel {
             display: none;
             position: absolute;
-            bottom: calc(100% + 10px);
+            bottom: calc(100% + 10px * var(--ui-scale));
             left: 50%;
             transform: translateX(-50%);
             background: var(--panel-bg);
             border: 2px solid var(--border-color);
-            border-radius: 16px;
-            padding: 16px 18px;
-            min-width: 280px;
-            max-width: 340px;
+            border-radius: calc(16px * var(--ui-scale));
+            padding: calc(16px * var(--ui-scale)) calc(18px * var(--ui-scale));
+            min-width: calc(280px * var(--ui-scale));
+            max-width: min(calc(100vw - 24px), calc(340px * var(--ui-scale)));
+            max-height: min(82vh, calc(620px * var(--ui-scale)));
+            overflow-y: auto;
+            overscroll-behavior: contain;
             box-shadow: 0 4px 24px rgba(0,0,0,0.7);
             z-index: 51;
             flex-direction: column;
-            gap: 12px;
+            gap: calc(12px * var(--ui-scale));
         }
         #tts-settings-panel.open {
             display: flex;
@@ -977,10 +1021,10 @@
         .tts-setting-row {
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: calc(5px * var(--ui-scale));
         }
         .tts-setting-row label {
-            font-size: 0.78rem;
+            font-size: calc(12.5px * var(--ui-scale));
             opacity: 0.8;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -991,33 +1035,34 @@
             background: var(--button-bg);
             color: var(--text-color);
             border: 1.5px solid var(--border-color);
-            border-radius: 8px;
-            padding: 5px 8px;
-            font-size: 0.9rem;
+            border-radius: calc(8px * var(--ui-scale));
+            padding: calc(5px * var(--ui-scale)) calc(8px * var(--ui-scale));
+            font-size: calc(14.4px * var(--ui-scale));
             cursor: pointer;
         }
         .tts-setting-row input[type=range] {
-            padding: 4px 0;
+            padding: calc(4px * var(--ui-scale)) 0;
             accent-color: var(--text-color);
         }
         .tts-setting-row .radio-group {
             display: flex;
-            gap: 6px;
+            gap: calc(6px * var(--ui-scale));
             flex-wrap: wrap;
         }
-        .tts-setting-row .radio-group label {
+        .tts-setting-row .radio-group label,
+        .tts-checkbox-pill {
             display: flex;
             align-items: center;
-            gap: 4px;
-            font-size: 0.85rem;
+            gap: calc(4px * var(--ui-scale));
+            font-size: calc(13.6px * var(--ui-scale));
             text-transform: none;
             letter-spacing: 0;
             opacity: 1;
             cursor: pointer;
             background: var(--button-bg);
             border: 1.5px solid var(--border-color);
-            border-radius: 20px;
-            padding: 4px 10px;
+            border-radius: calc(20px * var(--ui-scale));
+            padding: calc(4px * var(--ui-scale)) calc(10px * var(--ui-scale));
             transition: background 0.1s;
         }
         .tts-setting-row .radio-group input[type=radio] {
@@ -1030,18 +1075,32 @@
             background: var(--text-color);
             color: var(--bg-color);
         }
+        /* Single on/off pill (Focus Mode) — mirrors the radio-pill look */
+        .tts-checkbox-pill input[type=checkbox] { display: none; }
+        .tts-checkbox-pill:has(input:checked) {
+            background: var(--text-color);
+            color: var(--bg-color);
+            font-weight: bold;
+        }
         .tts-settings-title {
-            font-size: 0.85rem;
+            font-size: calc(13.6px * var(--ui-scale));
             font-weight: bold;
             opacity: 0.9;
-            margin-bottom: 2px;
+            margin-bottom: calc(2px * var(--ui-scale));
         }
         #tts-ocr-status {
-            font-size: 0.75rem;
+            font-size: calc(12px * var(--ui-scale));
             opacity: 0.6;
             text-align: center;
             font-style: italic;
         }
+        .tts-setting-note {
+            font-size: calc(11.5px * var(--ui-scale));
+            opacity: 0.7;
+            font-style: italic;
+            margin-top: calc(4px * var(--ui-scale));
+        }
+        .tts-setting-note:empty { display: none; }
 
         /* Word highlight overlay — absolutely positioned inside #transform-layer,
            same coordinate space as the freeze overlay.
@@ -1063,29 +1122,51 @@
             opacity: 1;
         }
 
+        /* Focus Mode dimmer — see the #tts-dim-overlay markup at #workspace level.
+           Fills #workspace exactly like #transform-layer; updateVisuals() copies the
+           same translate+scale transform onto it (transform-origin must match), so the
+           holes track the magnified text. Sits above the transform-layer group but
+           below the reading guides (z 20) and the bar (z 200). Vector → crisp at any
+           zoom. --tts-dim-strength sets the veil alpha. */
+        #tts-dim-overlay {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            transform-origin: center center;
+            z-index: 2;
+            pointer-events: none;
+            display: none;            /* shown by updateDimOverlay() */
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        #tts-dim-overlay.visible {
+            opacity: var(--tts-dim-strength, 0.6);
+        }
+
         /* Raw OCR text panel — slides up above the tts-bar when open */
         #tts-text-panel {
             display: none;
             position: absolute;
-            bottom: calc(100% + 10px);
+            bottom: calc(100% + 10px * var(--ui-scale));
             left: 50%;
             transform: translateX(-50%);
             background: var(--panel-bg);
             color: var(--text-color);
             border: 2px solid var(--border-color);
-            border-radius: 16px;
-            padding: 14px 18px;
-            width: min(90vw, 640px);
+            border-radius: calc(16px * var(--ui-scale));
+            padding: calc(14px * var(--ui-scale)) calc(18px * var(--ui-scale));
+            width: min(90vw, calc(640px * var(--ui-scale)));
             max-height: 55vh;
             overflow-y: auto;
             overscroll-behavior: contain;
             box-shadow: 0 4px 24px rgba(0,0,0,0.7);
             z-index: 51;
             flex-direction: column;
-            gap: 10px;
-            /* Font size is driven by --tts-text-scale so +/- zoom applies.
-               px base (not rem) so the global text-scale doesn't double-apply here. */
-            font-size: calc(16px * var(--tts-text-scale, 1));
+            gap: calc(10px * var(--ui-scale));
+            /* Body font is driven by --tts-text-scale (the +/- zoom) AND --ui-scale
+               (the menubar size). px base so the global text-scale never compounds. */
+            font-size: calc(16px * var(--ui-scale) * var(--tts-text-scale, 1));
             line-height: 1.6;
         }
         #tts-text-panel.open {
@@ -1099,7 +1180,7 @@
             flex-shrink: 0;
         }
         #tts-text-panel-title {
-            font-size: 0.78rem;
+            font-size: calc(12.5px * var(--ui-scale));
             font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -1109,14 +1190,14 @@
             background: var(--button-bg);
             color: var(--text-color);
             border: 1.5px solid var(--border-color);
-            border-radius: 6px;
-            width: 28px;
-            height: 28px;
+            border-radius: calc(6px * var(--ui-scale));
+            width: calc(28px * var(--ui-scale));
+            height: calc(28px * var(--ui-scale));
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 1rem;
+            font-size: calc(16px * var(--ui-scale));
             font-weight: bold;
             flex-shrink: 0;
             transition: background 0.1s;
@@ -2898,6 +2979,7 @@
                             </label>
 
                         </div>
+                        <p class="adv-explainer" style="margin-top:8px;">Tip: grab the <b>⠿ handle</b> on the left of the bar to drag it anywhere on screen. <span id="ttsbar-custom-note" style="display:none;">The bar is currently in a custom spot — pick an option above to dock it again.</span></p>
 
                     </div>
 
@@ -3218,6 +3300,21 @@
             <div id="tts-click-overlay" aria-hidden="true" style="display:none;position:absolute;inset:0;z-index:4;cursor:crosshair;" role="button" aria-label="Click anywhere on the frozen frame to jump speech to the nearest word" tabindex="-1"></div>
         </div>
 
+        <!-- Focus Mode dimmer: darkens everything EXCEPT the OCR'd text boxes so the
+             words stand out. Deliberately a sibling of #transform-layer (NOT a child),
+             so the theme filter chain (invert / colour-matrix) never recolours the veil
+             — it would otherwise flip a dark veil to light under inverted themes. It
+             fills #workspace exactly like #transform-layer and is given the SAME
+             translate+scale transform by updateVisuals(), so the holes track the
+             magnified text. Full-cover dark rect, masked white everywhere with black
+             holes at each detected word/line box (black mask = not darkened). -->
+        <svg id="tts-dim-overlay" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 100">
+            <defs><mask id="tts-dim-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+                <rect x="0" y="0" width="100" height="100" fill="#fff"></rect>
+            </mask></defs>
+            <rect x="0" y="0" width="100" height="100" fill="#000" mask="url(#tts-dim-mask)"></rect>
+        </svg>
+
         <!-- Connecting indicator — shown while VDO.ninja WebRTC handshake is in progress -->
         <div id="connecting-indicator" role="status" aria-live="polite" aria-label="Connecting">
             <div class="ci-spinner" aria-hidden="true"></div>
@@ -3267,6 +3364,12 @@
                 </div>
 
                 <div class="tts-setting-row">
+                    <label for="ocr-lang-select">OCR Language</label>
+                    <select id="ocr-lang-select" aria-label="Select OCR language"></select>
+                    <div id="ocr-lang-note" class="tts-setting-note" aria-live="polite"></div>
+                </div>
+
+                <div class="tts-setting-row">
                     <label for="tts-voice-select">Voice</label>
                     <select id="tts-voice-select" aria-label="Select TTS voice"></select>
                 </div>
@@ -3299,6 +3402,15 @@
                 </div>
 
                 <div class="tts-setting-row">
+                    <label id="tts-dim-label">Focus Mode</label>
+                    <label class="tts-checkbox-pill">
+                        <input type="checkbox" id="tts-dim-toggle" aria-describedby="tts-dim-desc">
+                        <span>Dim everything except the text</span>
+                    </label>
+                    <div id="tts-dim-desc" class="tts-setting-note">Darkens the area around detected text on a frozen frame so the words stand out and distractions fade back.</div>
+                </div>
+
+                <div class="tts-setting-row">
                     <label for="tts-rate-slider">Speed — <span id="tts-rate-label">1.0×</span></label>
                     <input type="range" id="tts-rate-slider" min="0.5" max="2.5" step="0.1" value="1.0" aria-label="Reading speed" aria-valuemin="0.5" aria-valuemax="2.5" aria-valuenow="1.0">
                 </div>
@@ -3323,6 +3435,11 @@
                 <div id="tts-raw-text" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" aria-label="Extracted text from frozen frame"></div>
             </div><!-- /#tts-text-panel -->
 
+            <button type="button" class="tts-grip" id="tts-drag-handle"
+                    aria-label="Move the Text-to-Speech bar. Drag with the mouse, or use the arrow keys to nudge."
+                    title="Drag to move the bar">
+                <svg viewBox="0 0 12 22" width="12" height="22" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="9" cy="8" r="1.5"/><circle cx="3" cy="13" r="1.5"/><circle cx="9" cy="13" r="1.5"/><circle cx="3" cy="18" r="1.5"/><circle cx="9" cy="18" r="1.5"/></svg>
+            </button>
             <button type="button" class="tts-btn" id="btn-tts-prev" aria-label="Previous sentence" disabled>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
             </button>
@@ -4310,6 +4427,7 @@
             ocrEngine: 'auto',  // 'auto' | 'native' | 'tesseract' | 'rapidocr'
             ocrLang: 'eng',     // OCR language (Tesseract code; see LANGUAGE_REGISTRY)
             ttsHighlightColor: '#FFD700',
+            ttsDimSurroundings: false, // Focus Mode: darken everything except OCR'd text
             readingMode: 'none', readingAutoFollow: true, readingY: window.innerHeight / 2,
             readingGap: 150, hideReadingHint: false, readingFollowTts: false,
             activeThemeId: defaultThemes[0].id,
@@ -4324,6 +4442,8 @@
             // Screen placement
             toolbarPlacement: 'top',         // 'top' | 'bottom' | 'left' | 'right'
             ttsBarPlacement:  'bottom-center', // 'bottom-center'|'bottom-left'|'bottom-right'|'top-center'|'top-left'|'top-right'
+            ttsBarFreeX: null,               // viewport-px top-left when the bar has been hand-dragged
+            ttsBarFreeY: null,               // (both null = use the ttsBarPlacement preset above)
             menubarScale: 1.44,              // maps to --ui-scale CSS variable
             textScale: 1.0,                  // maps to --text-scale CSS variable (content/settings text)
             letterSpacing: 0,                // em — advanced text spacing
@@ -4429,6 +4549,9 @@
         let snapshotTimer = null;
         let knownStreamID = null;   // populated if VDO.Ninja tells us the streamID
         const freezeOverlay = document.getElementById('freeze-overlay');
+        // Focus-Mode dimmer (declared early so updateVisuals can mirror the transform onto it)
+        const ttsDimOverlay = document.getElementById('tts-dim-overlay');
+        const ttsDimMask    = document.getElementById('tts-dim-mask');
 
         // --- Screen Share state variables ---
         let ssStreamId        = null;
@@ -4570,6 +4693,7 @@
                     delete parsed.ttsUnit; delete parsed.ttsRegion;
                     delete parsed.ttsRate; delete parsed.ttsPitch;
                     delete parsed.ocrEngine; delete parsed.ttsHighlightColor;
+                    delete parsed.ttsDimSurroundings;
                 }
 
                 // Never restore runtime-only flags — their UI (overlay, buttons, CSS class)
@@ -5413,7 +5537,7 @@
 
             // Restore screen placement from saved prefs (must run before adjustToolbar)
             applyToolbarPlacement(state.toolbarPlacement || 'top');
-            applyTtsBarPlacement(state.ttsBarPlacement   || 'bottom-center');
+            syncTtsBarPosition(); // hand-dragged free position, else the saved preset
             populatePalette('text-palette-grid', true);
             populatePalette('bg-palette-grid', false);
 
@@ -5613,6 +5737,15 @@
         startBtn.addEventListener('click', () => {
             let rawUrl = vdoInput.value.trim();
             if (!rawUrl) return;
+
+            // A saved "https://local.screenshare/" link (left over from a previous local
+            // screen-share session) can't be loaded as a real URL — re-trigger the screen-share
+            // picker instead. startScreenShare() re-sets the input + re-clicks Start, which then
+            // hits the isLocalSession branch below with a live stream.
+            if (rawUrl === 'https://local.screenshare/' && !isLocalSession) {
+                startScreenShare({ local: true });
+                return;
+            }
 
             // Local native screen share — the video element feeds direct from MediaStream
             if (rawUrl === 'https://local.screenshare/' && isLocalSession) {
@@ -5826,6 +5959,11 @@
                 state.panY = Math.max(-maxPanY, Math.min(state.panY, maxPanY));
 
                 transformLayer.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.streamScale})`;
+                // Focus-Mode dimmer mirrors the same transform (it lives outside the
+                // filtered layer; flip is baked into the hole coords, so no flip here).
+                if (ttsDimOverlay && ttsDimOverlay.classList.contains('visible')) {
+                    ttsDimOverlay.style.transform = transformLayer.style.transform;
+                }
                 const flipTransform = `scaleX(${state.flipH ? -1 : 1}) scaleY(${state.flipV ? -1 : 1})`;
                 vdoFrame.style.transform = flipTransform;
                 // Overlay must mirror the same flip so frozen frames stay geometrically aligned
@@ -6329,6 +6467,7 @@
                 document.body.classList.remove('is-frozen');
                 syncTtsBarFrozenState();
                 if (typeof updateClickOverlay === 'function') updateClickOverlay();
+                if (typeof updateDimOverlay === 'function') updateDimOverlay();
                 showStatus("Frame Unfrozen");
             }
             savePrefs();
@@ -6439,6 +6578,16 @@
             // Render ticks if not yet done (first call from DOMContentLoaded)
             const ticks = document.getElementById('menubar-size-ticks');
             if (ticks && !ticks.children.length) _renderMenubarTicks();
+            // The TTS bar scales with --ui-scale too; if it was hand-dragged, re-clamp
+            // its position so the now-resized bar can't end up partly off-screen.
+            // Re-check the free coords INSIDE the rAF — a preset could clear them first.
+            requestAnimationFrame(() => {
+                const b = document.getElementById('tts-bar');
+                if (b && b.offsetWidth &&
+                    typeof state.ttsBarFreeX === 'number' && typeof state.ttsBarFreeY === 'number') {
+                    applyTtsBarFreePosition(state.ttsBarFreeX, state.ttsBarFreeY, false);
+                }
+            });
             if (save) savePrefs();
         }
 
@@ -6524,64 +6673,124 @@
 
             // adjustToolbar handles overflow / span visibility for the new orientation
             adjustToolbar();
+            // The TTS bar flips between position:fixed and position:absolute for
+            // side toolbars (see CSS). Re-apply its position so a hand-dragged bar
+            // lands in the right spot under the new positioning context.
+            if (typeof syncTtsBarPosition === 'function') syncTtsBarPosition();
             savePrefs();
+        }
+
+        // Settings + raw-text panels open upward from a bottom-anchored bar and
+        // downward from a top-anchored bar. Shared by both placement paths.
+        function setTtsBarPanelDirection(openDownward) {
+            [ttsSettingsPanel, ttsTextPanel].forEach(panel => {
+                if (!panel) return;
+                if (openDownward) {
+                    panel.style.bottom = '';
+                    panel.style.top    = 'calc(100% + 10px * var(--ui-scale))';
+                } else {
+                    panel.style.top    = '';
+                    panel.style.bottom = 'calc(100% + 10px * var(--ui-scale))';
+                }
+            });
+        }
+
+        // Reflect "is the bar in a preset slot or hand-placed?" in the settings modal:
+        // clear/select the placement radios + cards and toggle the "custom" hint.
+        function _syncTtsPlacementControls(pos /* null when free-dragged */) {
+            document.querySelectorAll('input[name="ttsbar-placement"]').forEach(r => {
+                r.checked = pos != null && r.value === pos;
+            });
+            TTSBAR_PLACEMENTS.forEach(p => {
+                const card = document.getElementById(`ttsbar-card-${p}`);
+                if (card) card.classList.toggle('mode-active', p === pos);
+            });
+            const note = document.getElementById('ttsbar-custom-note');
+            if (note) note.style.display = (pos == null) ? '' : 'none';
         }
 
         function applyTtsBarPlacement(pos) {
             if (!TTSBAR_PLACEMENTS.includes(pos)) pos = 'bottom-center';
             state.ttsBarPlacement = pos;
+            // Picking a preset cancels any hand-dragged position.
+            state.ttsBarFreeX = null;
+            state.ttsBarFreeY = null;
 
             // Map position string to CSS properties
             const [vEdge, hEdge] = pos.split('-'); // e.g. 'bottom', 'center'
             const bar = document.getElementById('tts-bar');
             if (!bar) { savePrefs(); return; }
 
-            // Reset all edges and transform first
+            // Reset all edges first. Use transform:none (not '') so we explicitly
+            // override the base CSS translateX(-50%); only the centered slots re-add it.
             bar.style.top       = '';
             bar.style.bottom    = '';
             bar.style.left      = '';
             bar.style.right     = '';
-            bar.style.transform = '';
+            bar.style.transform = 'none';
 
-            if (vEdge === 'bottom') {
-                bar.style.bottom = '18px';
-            } else {
-                bar.style.top = '18px';
-            }
+            // Docked margin scales with the bar so it stays visually balanced.
+            const edge = 'calc(18px * var(--ui-scale))';
+            if (vEdge === 'bottom') bar.style.bottom = edge;
+            else                    bar.style.top    = edge;
 
             if (hEdge === 'center') {
                 bar.style.left      = '50%';
                 bar.style.transform = 'translateX(-50%)';
             } else if (hEdge === 'left') {
-                bar.style.left = '18px';
+                bar.style.left = edge;
             } else {
-                bar.style.right = '18px';
+                bar.style.right = edge;
             }
 
-            // Settings panel and text panel: open upward from bottom bar, downward from top bar
-            const openDownward = vEdge === 'top';
-            [ttsSettingsPanel, ttsTextPanel].forEach(panel => {
-                if (!panel) return;
-                if (openDownward) {
-                    panel.style.bottom    = '';
-                    panel.style.top       = 'calc(100% + 10px)';
-                } else {
-                    panel.style.top    = '';
-                    panel.style.bottom = 'calc(100% + 10px)';
-                }
-            });
-
-            // Sync radio + mode-card active states
-            document.querySelectorAll('input[name="ttsbar-placement"]').forEach(r => {
-                r.checked = r.value === pos;
-            });
-            // card ids use hyphens but value uses hyphens too — map e.g. 'bottom-center' → 'ttsbar-card-bottom-center'
-            TTSBAR_PLACEMENTS.forEach(p => {
-                const card = document.getElementById(`ttsbar-card-${p}`);
-                if (card) card.classList.toggle('mode-active', p === pos);
-            });
-
+            setTtsBarPanelDirection(vEdge === 'top');
+            _syncTtsPlacementControls(pos);
             savePrefs();
+        }
+
+        // Place the bar at an arbitrary viewport position (top-left corner, in
+        // viewport px) — used by the drag handle and arrow-key nudging. Clamps to
+        // the visible viewport, then converts to the bar's offset-parent space so
+        // it works whether the bar is position:fixed (normal) or position:absolute
+        // (left/right toolbar layouts). Stores viewport coords in state.
+        function applyTtsBarFreePosition(viewportX, viewportY, save = true) {
+            const bar = document.getElementById('tts-bar');
+            if (!bar) return;
+            if (!Number.isFinite(viewportX) || !Number.isFinite(viewportY)) return; // ignore bad input
+            const w = bar.offsetWidth, h = bar.offsetHeight;
+            const margin = 6;
+            const maxX = Math.max(margin, window.innerWidth  - w - margin);
+            const maxY = Math.max(margin, window.innerHeight - h - margin);
+            viewportX = Math.min(Math.max(margin, viewportX), maxX);
+            viewportY = Math.min(Math.max(margin, viewportY), maxY);
+
+            state.ttsBarFreeX = viewportX;
+            state.ttsBarFreeY = viewportY;
+
+            // Convert viewport coords → offset-parent-relative left/top.
+            // offsetParent is null for position:fixed (anchor = viewport, 0/0).
+            const op = bar.offsetParent;
+            const opRect = op ? op.getBoundingClientRect() : { left: 0, top: 0 };
+            bar.style.bottom    = '';
+            bar.style.right     = '';
+            bar.style.transform = 'none'; // override base CSS translateX(-50%) — free pos uses raw left/top
+            bar.style.left = (viewportX - opRect.left) + 'px';
+            bar.style.top  = (viewportY - opRect.top)  + 'px';
+
+            // Panel opens downward when the bar sits in the top half of the screen.
+            setTtsBarPanelDirection((viewportY + h / 2) < window.innerHeight / 2);
+            _syncTtsPlacementControls(null);
+            if (save) savePrefs();
+        }
+
+        // Apply whichever position model is active: hand-dragged free position,
+        // else the saved preset. Called on init and whenever the bar is shown.
+        function syncTtsBarPosition() {
+            if (typeof state.ttsBarFreeX === 'number' && typeof state.ttsBarFreeY === 'number') {
+                applyTtsBarFreePosition(state.ttsBarFreeX, state.ttsBarFreeY, false);
+            } else {
+                applyTtsBarPlacement(state.ttsBarPlacement || 'bottom-center');
+            }
         }
 
         // ================================================================
@@ -7955,10 +8164,12 @@
 
             document.querySelectorAll('input[name="ttsbar-placement"]').forEach(r => {
                 r.addEventListener('change', () => applyTtsBarPlacement(r.value));
-                r.checked = r.value === state.ttsBarPlacement;
-                const card = document.getElementById(`ttsbar-card-${r.value}`);
-                if (card) card.classList.toggle('mode-active', r.value === state.ttsBarPlacement);
             });
+            // Reflect either the preset slot or the hand-dragged "custom" state.
+            {
+                const freeActive = typeof state.ttsBarFreeX === 'number' && typeof state.ttsBarFreeY === 'number';
+                _syncTtsPlacementControls(freeActive ? null : (state.ttsBarPlacement || 'bottom-center'));
+            }
 
             // --- Open / Close ---
             btnOpen.addEventListener('click', () => {
@@ -8424,15 +8635,19 @@
             return url.toString();
         }
 
-        async function startScreenShare() {
+        async function startScreenShare(opts) {
             dlog('ss', 'startScreenShare called');
-            const isOnlineMode = document.getElementById('ss-online-mode')?.checked;
+            // opts.local forces local-native mode (used when re-triggering a saved
+            // https://local.screenshare/ link); otherwise honour the mode radio.
+            const isOnlineMode = (opts && opts.local) ? false : document.getElementById('ss-online-mode')?.checked;
 
             if (!isOnlineMode) {
                 // ---- LOCAL NATIVE MODE ----
                 try {
                     const stream = await navigator.mediaDevices.getDisplayMedia({
-                        video: { displaySurface: 'monitor' },
+                        // Default the picker to the "Window" tab (most relevant for magnifying
+                        // a single app); the user can still switch to a full screen/tab.
+                        video: { displaySurface: 'window' },
                         audio: false
                     });
                     localScreenStream = stream;
@@ -8604,7 +8819,7 @@
         }
 
         // ---- Screen share button wiring ----
-        document.getElementById('btn-start-screenshare').addEventListener('click', startScreenShare);
+        document.getElementById('btn-start-screenshare').addEventListener('click', () => startScreenShare());
         document.getElementById('btn-ss-stop').addEventListener('click', () => {
             stopScreenShare();
             dlog('ss', 'user clicked Stop');
@@ -8823,18 +9038,37 @@
         // has no compatible model, so the UI steers the user to Tesseract.
         const TESSDATA_CDN = 'https://tessdata.projectnaptha.com/4.0.0';
         const LANGUAGE_REGISTRY = [
-            { code: 'eng',     name: 'English',              local: true,  rapid: true  },
-            { code: 'spa',     name: 'Spanish',              local: true,  rapid: false },
-            { code: 'fra',     name: 'French',               local: true,  rapid: false },
-            { code: 'deu',     name: 'German',               local: false, rapid: false },
-            { code: 'ita',     name: 'Italian',              local: false, rapid: false },
-            { code: 'por',     name: 'Portuguese',           local: false, rapid: false },
-            { code: 'nld',     name: 'Dutch',                local: false, rapid: false },
-            { code: 'rus',     name: 'Russian',              local: false, rapid: false },
-            { code: 'chi_sim', name: 'Chinese (Simplified)', local: false, rapid: true  },
-            { code: 'jpn',     name: 'Japanese',             local: false, rapid: false },
-            { code: 'kor',     name: 'Korean',               local: false, rapid: false },
-            { code: 'ara',     name: 'Arabic',               local: false, rapid: false },
+            // Bundled offline (traineddata shipped in /tesseract)
+            { code: 'eng',     name: 'English',               local: true,  rapid: true  },
+            { code: 'spa',     name: 'Spanish',               local: true,  rapid: false },
+            { code: 'fra',     name: 'French',                local: true,  rapid: false },
+            // Streamed from the tessdata CDN on first use (alphabetical by name)
+            { code: 'ara',     name: 'Arabic',                local: false, rapid: false },
+            { code: 'ces',     name: 'Czech',                 local: false, rapid: false },
+            { code: 'chi_sim', name: 'Chinese (Simplified)',  local: false, rapid: true  },
+            { code: 'chi_tra', name: 'Chinese (Traditional)', local: false, rapid: false },
+            { code: 'dan',     name: 'Danish',                local: false, rapid: false },
+            { code: 'nld',     name: 'Dutch',                 local: false, rapid: false },
+            { code: 'fin',     name: 'Finnish',               local: false, rapid: false },
+            { code: 'deu',     name: 'German',                local: false, rapid: false },
+            { code: 'ell',     name: 'Greek',                 local: false, rapid: false },
+            { code: 'heb',     name: 'Hebrew',                local: false, rapid: false },
+            { code: 'hin',     name: 'Hindi',                 local: false, rapid: false },
+            { code: 'hun',     name: 'Hungarian',             local: false, rapid: false },
+            { code: 'ind',     name: 'Indonesian',            local: false, rapid: false },
+            { code: 'ita',     name: 'Italian',               local: false, rapid: false },
+            { code: 'jpn',     name: 'Japanese',              local: false, rapid: false },
+            { code: 'kor',     name: 'Korean',                local: false, rapid: false },
+            { code: 'nor',     name: 'Norwegian',             local: false, rapid: false },
+            { code: 'pol',     name: 'Polish',                local: false, rapid: false },
+            { code: 'por',     name: 'Portuguese',            local: false, rapid: false },
+            { code: 'ron',     name: 'Romanian',              local: false, rapid: false },
+            { code: 'rus',     name: 'Russian',               local: false, rapid: false },
+            { code: 'swe',     name: 'Swedish',               local: false, rapid: false },
+            { code: 'tha',     name: 'Thai',                  local: false, rapid: false },
+            { code: 'tur',     name: 'Turkish',               local: false, rapid: false },
+            { code: 'ukr',     name: 'Ukrainian',             local: false, rapid: false },
+            { code: 'vie',     name: 'Vietnamese',            local: false, rapid: false },
         ];
         function langEntry(code) { return LANGUAGE_REGISTRY.find(l => l.code === code) || LANGUAGE_REGISTRY[0]; }
         function langName(code)  { return langEntry(code).name; }
@@ -9236,6 +9470,7 @@
             setTtsStatus(statusText);
             updateTtsControls();
             if (typeof updateClickOverlay === 'function') updateClickOverlay();
+            if (typeof updateDimOverlay === 'function') updateDimOverlay();
             if (typeof renderTtsTextPanel === 'function') renderTtsTextPanel();
         }
 
@@ -9331,6 +9566,7 @@
                 renderTtsTextPanel();
                 updateTtsControls();
                 updateClickOverlay();
+                updateDimOverlay();
                 speakUnit(0);
 
             } catch(err) {
@@ -9817,6 +10053,72 @@
         }
 
         // ----------------------------------------------------------------
+        // FOCUS MODE — dim everything except the OCR'd text
+        // ----------------------------------------------------------------
+        // Builds an SVG mask of "holes" over each detected word/line box so the
+        // surrounding clutter is darkened and the text stands out. The overlay
+        // lives inside #transform-layer (same space as #tts-word-highlight), so
+        // the holes track the magnified text under pan/zoom for free.
+        //
+        // viewBox is 0..100 with preserveAspectRatio="none", so a word's
+        // overlay-percentage rect (from ocrWordToOverlayPct) maps straight to
+        // user units. Holes use a white-base / black-rect mask (black = NOT
+        // darkened), which is robust to overlapping or duplicate boxes — unlike an
+        // even-odd path, where RapidOCR's repeated per-line boxes would cancel out.
+        const TTS_DIM_PAD_PX = 6; // breathing room around each box so glyphs aren't clipped
+
+        function buildDimMaskHoles() {
+            if (!ttsDimMask || !ocrCropInfo || !ocrWords.length) return false;
+            const overlayW = transformLayer.offsetWidth  || workspace.clientWidth  || 1;
+            const overlayH = transformLayer.offsetHeight || workspace.clientHeight || 1;
+            // px padding → per-axis percent (the 0..100 grid is stretched non-uniformly)
+            const padX = TTS_DIM_PAD_PX / overlayW * 100;
+            const padY = TTS_DIM_PAD_PX / overlayH * 100;
+            // Dedupe identical boxes (RapidOCR gives every word in a line the same box).
+            const seen = new Set();
+            let holes = '';
+            for (const word of ocrWords) {
+                const pct = ocrWordToOverlayPct(word);
+                if (!pct) continue;
+                let x = pct.left - padX, y = pct.top - padY;
+                let w = pct.w + padX * 2, h = pct.h + padY * 2;
+                if (w <= 0 || h <= 0) continue;
+                const key = `${x.toFixed(2)},${y.toFixed(2)},${w.toFixed(2)},${h.toFixed(2)}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                const r = Math.min(w, h) * 0.18; // soft rounded corners
+                holes += `<rect x="${x.toFixed(3)}" y="${y.toFixed(3)}" width="${w.toFixed(3)}" height="${h.toFixed(3)}" rx="${r.toFixed(3)}" ry="${r.toFixed(3)}" fill="#000"></rect>`;
+            }
+            // Rebuild mask: white base (everything dim) + black holes (text kept clear).
+            ttsDimMask.innerHTML =
+                '<rect x="0" y="0" width="100" height="100" fill="#fff"></rect>' + holes;
+            return holes.length > 0;
+        }
+
+        // Show/refresh or hide the dimmer based on the toggle + current TTS state.
+        function updateDimOverlay() {
+            if (!ttsDimOverlay) return;
+            const show = state.ttsDimSurroundings && state.isTtsEnabled &&
+                         state.isFrozen && !isHomeTts && ocrWords.length > 0;
+            if (!show) {
+                ttsDimOverlay.classList.remove('visible');
+                ttsDimOverlay.style.display = 'none';
+                return;
+            }
+            const built = buildDimMaskHoles();
+            if (!built) { // no usable boxes (e.g. Native engine block-only) → nothing to dim
+                ttsDimOverlay.classList.remove('visible');
+                ttsDimOverlay.style.display = 'none';
+                return;
+            }
+            // NB: explicit 'block' — '' would fall back to the base CSS display:none.
+            ttsDimOverlay.style.display = 'block';
+            // Match the magnifier's current pan/zoom right away (updateVisuals keeps it synced after).
+            ttsDimOverlay.style.transform = transformLayer.style.transform;
+            requestAnimationFrame(() => ttsDimOverlay.classList.add('visible'));
+        }
+
+        // ----------------------------------------------------------------
         // TTS → Reading Tool synchronisation
         // ----------------------------------------------------------------
         //
@@ -10118,6 +10420,7 @@
             }
             tesseractReady   = false;
             tesseractLoading = false;
+            _tessLoadedLang  = null;
             if (state.ocrEngine !== 'native') {
                 ttsOcrStatus.textContent = 'OCR engine: not loaded';
             }
@@ -10165,11 +10468,12 @@
                                 ? 'OCR engine: Native ⚡ (OS-level)'
                                 : 'OCR engine: Native not available in this browser';
                         } else {
-                            ttsOcrStatus.textContent = tesseractReady
-                                ? 'OCR engine: Tesseract.js v5 ✓ (local)'
+                            ttsOcrStatus.textContent = (tesseractReady && _tessLoadedLang === state.ocrLang)
+                                ? `OCR engine: Tesseract ✓ — ${langName(state.ocrLang)}`
                                 : 'OCR engine: not loaded';
                             if (!tesseractReady && !tesseractLoading) loadTesseract().catch(() => {});
                         }
+                        _updateOcrLangNote();
                         // If frozen, re-run OCR with the new engine immediately
                         if (state.isFrozen && state.isTtsEnabled) {
                             clearTtsState('<span class="tts-spinner"></span>Switching engine…');
@@ -10184,6 +10488,65 @@
                     (state.ocrEngine === 'auto' && r.value === (NATIVE_OCR_SUPPORTED ? 'native' : 'tesseract'));
             });
             updateOcrEnginePickerVisibility();
+            initOcrLangUI();
+        }
+
+        // ---- OCR language dropdown ----
+        let _ocrLangWired = false;
+        function initOcrLangUI() {
+            const sel = document.getElementById('ocr-lang-select');
+            if (!sel) return;
+            if (!sel.options.length) {
+                LANGUAGE_REGISTRY.forEach(l => {
+                    const o = document.createElement('option');
+                    o.value = l.code;
+                    o.textContent = l.name + (l.local ? ' — offline' : '');
+                    sel.appendChild(o);
+                });
+            }
+            sel.value = state.ocrLang || 'eng';
+            if (!_ocrLangWired) {
+                _ocrLangWired = true;
+                sel.addEventListener('change', () => setOcrLanguage(sel.value));
+            }
+            _updateOcrLangNote();
+        }
+
+        // Context-sensitive hint under the dropdown: flags CDN-streamed languages and warns
+        // when the chosen engine can't read the selected language.
+        function _updateOcrLangNote() {
+            const note = document.getElementById('ocr-lang-note');
+            if (!note) return;
+            const entry = langEntry(state.ocrLang);
+            if (state.ocrEngine === 'rapidocr' && !entry.rapid) {
+                note.textContent = `RapidOCR reads English & Chinese only — pick Tesseract for ${entry.name}.`;
+            } else if (!entry.local) {
+                note.textContent = `${entry.name}: streamed from the language CDN on first use.`;
+            } else {
+                note.textContent = `${entry.name}: bundled offline.`;
+            }
+        }
+
+        async function setOcrLanguage(code) {
+            if (!LANGUAGE_REGISTRY.some(l => l.code === code)) return;
+            state.ocrLang = code;
+            savePrefs();
+            const sel = document.getElementById('ocr-lang-select'); if (sel) sel.value = code;
+            _updateOcrLangNote();
+            dlog('ocr_lang', { lang: code });
+            if (!state.isTtsEnabled) return;
+            // Proactively (re)load Tesseract for the new language if it's the engine in play or
+            // already loaded — the status then reflects the switch immediately. (Native is
+            // OS-level/auto; RapidOCR's model is fixed — neither needs a per-language reload.)
+            const tessInPlay = state.ocrEngine === 'tesseract' ||
+                               (state.ocrEngine === 'auto' && !NATIVE_OCR_SUPPORTED) ||
+                               tesseractReady || tesseractLoading;
+            if (tessInPlay) loadTesseract().catch(() => {});
+            // Re-OCR the current frame in the new language.
+            if (state.isFrozen) {
+                clearTtsState('<span class="tts-spinner"></span>Switching to ' + langName(code) + '…');
+                setTimeout(runOcr, 60);
+            }
         }
 
         // --- TTS bar visibility ---
@@ -10197,8 +10560,8 @@
             if (state.isTtsEnabled) {
                 ttsBar.classList.add('tts-enabled');
                 ttsBar.style.display = 'flex';
-                // Re-apply placement so position styles aren't lost when display toggles
-                applyTtsBarPlacement(state.ttsBarPlacement || 'bottom-center');
+                // Re-apply position so styles aren't lost when display toggles
+                syncTtsBarPosition();
                 if (!isVideoActive) {
                     ttsBar.classList.add('home-tts-ready');
                     setTtsStatus('Press ▶ to read page');
@@ -10222,7 +10585,7 @@
             if (!state.isTtsEnabled) return;
             ttsBar.classList.remove('home-tts-ready');
             ttsBar.style.display = 'flex';
-            applyTtsBarPlacement(state.ttsBarPlacement || 'bottom-center');
+            syncTtsBarPosition();
             setTtsStatus('Press ▶ to read live');
             updateTtsControls();
             requestAnimationFrame(() => ttsBar.classList.add('bar-visible'));
@@ -10297,6 +10660,7 @@
             renderTtsTextPanel();
             updateTtsControls();
             updateClickOverlay();
+            updateDimOverlay(); // hides on home screen (no OCR boxes)
             speakUnit(0);
         }
 
@@ -10319,10 +10683,27 @@
             if (savedMatch) {
                 ttsVoiceSelect.value = savedMatch.voiceURI;
             } else {
-                const local = voices.find(v => v.localService) || voices[0];
-                state.ttsVoiceURI = local.voiceURI;
-                ttsVoiceSelect.value = local.voiceURI;
+                const dv = pickDefaultVoice(voices);
+                state.ttsVoiceURI = dv.voiceURI;
+                ttsVoiceSelect.value = dv.voiceURI;
             }
+        }
+
+        // Choose a sensible default voice when the user hasn't picked one. Priority:
+        //   1. Edge's high-quality natural English   ("Microsoft AndrewMultilingual Online …")
+        //   2. Chrome's default US English           ("Google US English")
+        //   3. Apple's "Daniel" (en-GB)              (Safari / macOS last resort)
+        //   4. first local-service voice, then any voice
+        function pickDefaultVoice(voices) {
+            const exact   = (n) => voices.find(v => v.name === n);
+            const partial = (s) => voices.find(v => v.name && v.name.includes(s));
+            return exact('Microsoft AndrewMultilingual Online (Natural) - English (United States)')
+                || partial('AndrewMultilingual')
+                || exact('Google US English')
+                || voices.find(v => v.name === 'Daniel' && /en[-_]GB/i.test(v.lang))
+                || partial('Daniel')
+                || voices.find(v => v.localService)
+                || voices[0];
         }
         window.speechSynthesis.onvoiceschanged = populateVoices;
         populateVoices();
@@ -10376,6 +10757,73 @@
             }
         });
 
+        // ----------------------------------------------------------------
+        // Drag the TTS bar anywhere — grip handle (pointer) + arrow-key nudge
+        // ----------------------------------------------------------------
+        const ttsDragHandle = document.getElementById('tts-drag-handle');
+        let _ttsDrag = null;
+        if (ttsDragHandle) {
+            ttsDragHandle.addEventListener('pointerdown', (e) => {
+                // Left mouse button only; touch/pen always start a drag.
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                e.preventDefault();
+                // Close any open panel so it doesn't fight the drag.
+                ttsSettingsPanel.classList.remove('open');
+                btnTtsSettings.setAttribute('aria-expanded', 'false');
+                ttsTextPanel.classList.remove('open');
+                btnTtsText.setAttribute('aria-expanded', 'false');
+                const rect = ttsBar.getBoundingClientRect();
+                _ttsDrag = {
+                    pointerId: e.pointerId,
+                    offsetX: e.clientX - rect.left, // grab point within the bar
+                    offsetY: e.clientY - rect.top,
+                    moved: false,
+                };
+                try { ttsDragHandle.setPointerCapture(e.pointerId); } catch (_) {}
+                ttsBar.classList.add('tts-dragging');
+            });
+            ttsDragHandle.addEventListener('pointermove', (e) => {
+                if (!_ttsDrag || e.pointerId !== _ttsDrag.pointerId) return;
+                _ttsDrag.moved = true;
+                applyTtsBarFreePosition(e.clientX - _ttsDrag.offsetX, e.clientY - _ttsDrag.offsetY, false);
+            });
+            const _endTtsDrag = () => {
+                if (!_ttsDrag) return;
+                const moved = _ttsDrag.moved;
+                try { ttsDragHandle.releasePointerCapture(_ttsDrag.pointerId); } catch (_) {}
+                _ttsDrag = null;
+                ttsBar.classList.remove('tts-dragging');
+                if (moved) { savePrefs(); showStatus('TTS bar moved — pick a preset in Settings to dock it again'); }
+            };
+            ttsDragHandle.addEventListener('pointerup', _endTtsDrag);
+            ttsDragHandle.addEventListener('pointercancel', _endTtsDrag);
+            // Keyboard: arrow keys nudge (Shift = larger step). Keeps the bar
+            // placeable without a mouse, complementing the Settings presets.
+            ttsDragHandle.addEventListener('keydown', (e) => {
+                const step = e.shiftKey ? 40 : 12;
+                const rect = ttsBar.getBoundingClientRect();
+                let nx = rect.left, ny = rect.top, handled = true;
+                switch (e.key) {
+                    case 'ArrowLeft':  nx -= step; break;
+                    case 'ArrowRight': nx += step; break;
+                    case 'ArrowUp':    ny -= step; break;
+                    case 'ArrowDown':  ny += step; break;
+                    default: handled = false;
+                }
+                if (handled) { e.preventDefault(); applyTtsBarFreePosition(nx, ny, true); }
+            });
+        }
+
+        // Keep a hand-dragged bar on-screen when the viewport resizes.
+        window.addEventListener('resize', () => {
+            if (typeof state.ttsBarFreeX === 'number' && typeof state.ttsBarFreeY === 'number' &&
+                ttsBar && ttsBar.style.display !== 'none' && ttsBar.offsetWidth) {
+                applyTtsBarFreePosition(state.ttsBarFreeX, state.ttsBarFreeY, false);
+            }
+            // Focus-Mode hole padding is computed from overlay size — rebuild if visible.
+            if (ttsDimOverlay && ttsDimOverlay.classList.contains('visible')) updateDimOverlay();
+        });
+
         ttsVoiceSelect.addEventListener('change', () => {
             state.ttsVoiceURI = ttsVoiceSelect.value;
             savePrefs();
@@ -10414,6 +10862,18 @@
             });
             if (r.value === state.ttsRegion) r.checked = true;
         });
+
+        // Focus Mode toggle — darken everything except the OCR'd text
+        const ttsDimToggle = document.getElementById('tts-dim-toggle');
+        if (ttsDimToggle) {
+            ttsDimToggle.checked = !!state.ttsDimSurroundings;
+            ttsDimToggle.addEventListener('change', () => {
+                state.ttsDimSurroundings = ttsDimToggle.checked;
+                savePrefs();
+                updateDimOverlay();
+                showStatus(state.ttsDimSurroundings ? 'Focus Mode On' : 'Focus Mode Off');
+            });
+        }
 
         ttsRateSlider.addEventListener('input', () => {
             state.ttsRate = parseFloat(ttsRateSlider.value);
@@ -10483,11 +10943,17 @@
             if (saved.ttsPitch)   { state.ttsPitch   = saved.ttsPitch;   if (ttsPitchSlider) { ttsPitchSlider.value = state.ttsPitch; }  if (ttsPitchLabel) ttsPitchLabel.textContent = state.ttsPitch.toFixed(1); }
             if (saved.ttsVoiceURI)  { state.ttsVoiceURI  = saved.ttsVoiceURI;  /* populateVoices() will apply to dropdown when voices are ready */ }
             if (saved.ocrEngine)    { state.ocrEngine    = saved.ocrEngine; }
+            if (saved.ocrLang && LANGUAGE_REGISTRY.some(l => l.code === saved.ocrLang)) { state.ocrLang = saved.ocrLang; }
             if (saved.ttsHighlightColor) {
                 // '#ffffff' was the old broken default (invisible on light backgrounds).
                 // Silently migrate anyone who saved it to the new yellow default.
                 const color = saved.ttsHighlightColor === '#ffffff' ? '#FFD700' : saved.ttsHighlightColor;
                 applyHighlightColor(color);
+            }
+            if (typeof saved.ttsDimSurroundings === 'boolean') {
+                state.ttsDimSurroundings = saved.ttsDimSurroundings;
+                const dimToggle = document.getElementById('tts-dim-toggle');
+                if (dimToggle) dimToggle.checked = saved.ttsDimSurroundings;
             }
             if (saved.isTtsEnabled) {
                 state.isTtsEnabled = true;
