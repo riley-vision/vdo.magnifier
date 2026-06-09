@@ -877,7 +877,7 @@
             min-width: 0;
             max-width: calc(100vw - 40px);
             opacity: 0;
-            transition: opacity 0.25s ease;
+            transition: opacity 0.25s ease, box-shadow 0.15s ease, border-color 0.15s ease;
             user-select: none;
             /* TTS bar is chrome */
             --panel-bg:          var(--chrome-bg);
@@ -977,7 +977,12 @@
         .tts-grip:hover { opacity: 1; background: var(--button-hover); color: var(--button-hover-text); }
         .tts-grip:focus-visible { outline: 3px solid var(--text-color); outline-offset: 2px; opacity: 1; }
         .tts-grip svg { width: calc(12px * var(--ui-scale)); height: calc(22px * var(--ui-scale)); }
-        #tts-bar.tts-dragging { cursor: grabbing; }
+        /* "Lift" the bar while dragging: deeper shadow + highlighted edge. */
+        #tts-bar.tts-dragging {
+            cursor: grabbing;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.75);
+            border-color: var(--text-color);
+        }
         #tts-bar.tts-dragging .tts-grip { cursor: grabbing; opacity: 1; }
 
         #tts-status-label {
@@ -3306,12 +3311,20 @@
              — it would otherwise flip a dark veil to light under inverted themes. It
              fills #workspace exactly like #transform-layer and is given the SAME
              translate+scale transform by updateVisuals(), so the holes track the
-             magnified text. Full-cover dark rect, masked white everywhere with black
-             holes at each detected word/line box (black mask = not darkened). -->
+             magnified text. Full-cover dark rect, masked white everywhere with softly
+             feathered black holes over each merged line/phrase band (black = not darkened). -->
         <svg id="tts-dim-overlay" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 100">
-            <defs><mask id="tts-dim-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
-                <rect x="0" y="0" width="100" height="100" fill="#fff"></rect>
-            </mask></defs>
+            <defs>
+                <!-- Softens the hole edges so the reveal fades rather than cutting a hard box.
+                     Applied only to the black holes (not the white base), so the outer veil
+                     boundary stays crisp. stdDeviation is in the 0..100 viewBox space. -->
+                <filter id="tts-dim-feather" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="0.6"></feGaussianBlur>
+                </filter>
+                <mask id="tts-dim-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+                    <rect x="0" y="0" width="100" height="100" fill="#fff"></rect>
+                </mask>
+            </defs>
             <rect x="0" y="0" width="100" height="100" fill="#000" mask="url(#tts-dim-mask)"></rect>
         </svg>
 
@@ -3436,8 +3449,8 @@
             </div><!-- /#tts-text-panel -->
 
             <button type="button" class="tts-grip" id="tts-drag-handle"
-                    aria-label="Move the Text-to-Speech bar. Drag with the mouse, or use the arrow keys to nudge."
-                    title="Drag to move the bar">
+                    aria-label="Move the Text-to-Speech bar. Drag with the mouse, use the arrow keys to nudge, or double-click to dock it back to its preset position."
+                    title="Drag to move · double-click to dock">
                 <svg viewBox="0 0 12 22" width="12" height="22" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="9" cy="8" r="1.5"/><circle cx="3" cy="13" r="1.5"/><circle cx="9" cy="13" r="1.5"/><circle cx="3" cy="18" r="1.5"/><circle cx="9" cy="18" r="1.5"/></svg>
             </button>
             <button type="button" class="tts-btn" id="btn-tts-prev" aria-label="Previous sentence" disabled>
@@ -9477,13 +9490,19 @@
         // --- Run OCR on latestFrame — dispatches to Native or Tesseract ---
         async function runOcr() {
             if (state.isOcrRunning) return;
+            // Claim the single-flight lock BEFORE any early return. Previously the
+            // no-frame guard below returned while isOcrRunning was still false, so a
+            // second rapid trigger (e.g. mashing Play before the first frame lands)
+            // sailed past the guard above and started a competing OCR run — two
+            // workers racing on the same canvas. Claim here, release on every exit.
+            state.isOcrRunning = true;
             if (!latestFrame) {
                 setTtsStatus((!isLocalSession && SNAPSHOT_API_UNSUPPORTED)
                     ? 'Frame capture needs Chrome or Edge for remote streams — or use Screen Share'
                     : 'No frame yet — try again');
+                state.isOcrRunning = false;   // release — nothing was started
                 return;
             }
-            state.isOcrRunning = true;
 
             window.speechSynthesis.cancel();
             ttsIsPlaying = false;
@@ -10055,17 +10074,66 @@
         // ----------------------------------------------------------------
         // FOCUS MODE — dim everything except the OCR'd text
         // ----------------------------------------------------------------
-        // Builds an SVG mask of "holes" over each detected word/line box so the
-        // surrounding clutter is darkened and the text stands out. The overlay
-        // lives inside #transform-layer (same space as #tts-word-highlight), so
-        // the holes track the magnified text under pan/zoom for free.
+        // Builds an SVG mask of "holes" over the detected text so the surrounding
+        // clutter is darkened and the text stands out. The overlay mirrors
+        // #transform-layer's transform, so the holes track the magnified text.
         //
-        // viewBox is 0..100 with preserveAspectRatio="none", so a word's
-        // overlay-percentage rect (from ocrWordToOverlayPct) maps straight to
-        // user units. Holes use a white-base / black-rect mask (black = NOT
-        // darkened), which is robust to overlapping or duplicate boxes — unlike an
-        // even-odd path, where RapidOCR's repeated per-line boxes would cancel out.
-        const TTS_DIM_PAD_PX = 6; // breathing room around each box so glyphs aren't clipped
+        // viewBox is 0..100 with preserveAspectRatio="none", so a box's
+        // overlay-percentage rect (from ocrWordToOverlayPct) maps straight to user
+        // units. Holes use a white-base / black-rect mask (black = NOT darkened),
+        // robust to overlapping/duplicate boxes — unlike an even-odd path, where
+        // RapidOCR's repeated per-line boxes would cancel out. The black holes are
+        // softly blurred (#tts-dim-feather) so the reveal fades rather than cuts.
+        const TTS_DIM_PAD_PX = 7; // breathing room around each band so glyphs aren't clipped
+
+        // Merge per-word OCR boxes into clean line/phrase bands. Tesseract returns a
+        // box per word; revealing each separately looks choppy (gaps between words),
+        // so we group boxes that share a line (vertical overlap) and union runs whose
+        // horizontal gap is small. A larger gap (≈ column gutter) keeps segments apart,
+        // so two side-by-side columns don't bridge into one band.
+        function _mergeOcrBoxesForDim(words) {
+            const boxes = words
+                .map(w => ({ x0: w.x0, y0: w.y0, x1: w.x1, y1: w.y1 }))
+                .filter(b => b.x1 > b.x0 && b.y1 > b.y0)
+                .sort((a, b) => a.y0 - b.y0);
+            if (!boxes.length) return [];
+
+            // 1) Group into lines by vertical overlap / centre proximity.
+            const lines = [];
+            for (const b of boxes) {
+                const h = b.y1 - b.y0, cy = (b.y0 + b.y1) / 2;
+                let line = null;
+                for (const L of lines) {
+                    const lh = L.y1 - L.y0, lcy = (L.y0 + L.y1) / 2;
+                    const vOverlap = Math.min(b.y1, L.y1) - Math.max(b.y0, L.y0);
+                    if (vOverlap > 0.4 * Math.min(h, lh) || Math.abs(cy - lcy) < 0.5 * Math.max(h, lh)) {
+                        line = L; break;
+                    }
+                }
+                if (line) { line.items.push(b); line.y0 = Math.min(line.y0, b.y0); line.y1 = Math.max(line.y1, b.y1); }
+                else lines.push({ y0: b.y0, y1: b.y1, items: [b] });
+            }
+
+            // 2) Within each line, union runs separated by only a small horizontal gap.
+            const merged = [];
+            for (const L of lines) {
+                L.items.sort((a, b) => a.x0 - b.x0);
+                const gapThresh = Math.max(8, (L.y1 - L.y0) * 0.8); // ~< column gutter
+                let cur = null;
+                for (const b of L.items) {
+                    if (cur && b.x0 - cur.x1 <= gapThresh) {
+                        cur.x1 = Math.max(cur.x1, b.x1);
+                        cur.y0 = Math.min(cur.y0, b.y0);
+                        cur.y1 = Math.max(cur.y1, b.y1);
+                    } else {
+                        if (cur) merged.push(cur);
+                        cur = { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 };
+                    }
+                }
+                if (cur) merged.push(cur);
+            }
+            return merged;
+        }
 
         function buildDimMaskHoles() {
             if (!ttsDimMask || !ocrCropInfo || !ocrWords.length) return false;
@@ -10074,24 +10142,25 @@
             // px padding → per-axis percent (the 0..100 grid is stretched non-uniformly)
             const padX = TTS_DIM_PAD_PX / overlayW * 100;
             const padY = TTS_DIM_PAD_PX / overlayH * 100;
-            // Dedupe identical boxes (RapidOCR gives every word in a line the same box).
             const seen = new Set();
             let holes = '';
-            for (const word of ocrWords) {
-                const pct = ocrWordToOverlayPct(word);
+            for (const box of _mergeOcrBoxesForDim(ocrWords)) {
+                const pct = ocrWordToOverlayPct(box);
                 if (!pct) continue;
-                let x = pct.left - padX, y = pct.top - padY;
-                let w = pct.w + padX * 2, h = pct.h + padY * 2;
+                const x = pct.left - padX, y = pct.top - padY;
+                const w = pct.w + padX * 2, h = pct.h + padY * 2;
                 if (w <= 0 || h <= 0) continue;
                 const key = `${x.toFixed(2)},${y.toFixed(2)},${w.toFixed(2)},${h.toFixed(2)}`;
                 if (seen.has(key)) continue;
                 seen.add(key);
-                const r = Math.min(w, h) * 0.18; // soft rounded corners
+                const r = Math.min(w, h) * 0.22; // soft rounded corners
                 holes += `<rect x="${x.toFixed(3)}" y="${y.toFixed(3)}" width="${w.toFixed(3)}" height="${h.toFixed(3)}" rx="${r.toFixed(3)}" ry="${r.toFixed(3)}" fill="#000"></rect>`;
             }
-            // Rebuild mask: white base (everything dim) + black holes (text kept clear).
+            // Rebuild mask: white base (everything dim) + softly-blurred black holes
+            // (text kept clear, with a feathered edge).
             ttsDimMask.innerHTML =
-                '<rect x="0" y="0" width="100" height="100" fill="#fff"></rect>' + holes;
+                '<rect x="0" y="0" width="100" height="100" fill="#fff"></rect>' +
+                '<g filter="url(#tts-dim-feather)">' + holes + '</g>';
             return holes.length > 0;
         }
 
@@ -10762,6 +10831,28 @@
         // ----------------------------------------------------------------
         const ttsDragHandle = document.getElementById('tts-drag-handle');
         let _ttsDrag = null;
+
+        // Magnetic snapping while dragging — pull the bar to the screen edges
+        // (at the same scaled margin the presets use) and the centre lines, so a
+        // hand-placed bar still lands cleanly aligned. Threshold is small so it
+        // only grabs when you're already close.
+        function _snapTtsBarPos(x, y) {
+            const bar = document.getElementById('tts-bar');
+            if (!bar) return { x, y };
+            const w = bar.offsetWidth, h = bar.offsetHeight;
+            const edge = Math.round(18 * (state.menubarScale || 1));
+            const T = 14;
+            const snap = (v, targets) => {
+                let best = v, bestD = T + 1;
+                for (const t of targets) { const d = Math.abs(v - t); if (d <= T && d < bestD) { best = t; bestD = d; } }
+                return best;
+            };
+            return {
+                x: snap(x, [edge, (window.innerWidth  - w) / 2, window.innerWidth  - w - edge]),
+                y: snap(y, [edge, (window.innerHeight - h) / 2, window.innerHeight - h - edge]),
+            };
+        }
+
         if (ttsDragHandle) {
             ttsDragHandle.addEventListener('pointerdown', (e) => {
                 // Left mouse button only; touch/pen always start a drag.
@@ -10785,7 +10876,8 @@
             ttsDragHandle.addEventListener('pointermove', (e) => {
                 if (!_ttsDrag || e.pointerId !== _ttsDrag.pointerId) return;
                 _ttsDrag.moved = true;
-                applyTtsBarFreePosition(e.clientX - _ttsDrag.offsetX, e.clientY - _ttsDrag.offsetY, false);
+                const p = _snapTtsBarPos(e.clientX - _ttsDrag.offsetX, e.clientY - _ttsDrag.offsetY);
+                applyTtsBarFreePosition(p.x, p.y, false);
             });
             const _endTtsDrag = () => {
                 if (!_ttsDrag) return;
@@ -10793,10 +10885,16 @@
                 try { ttsDragHandle.releasePointerCapture(_ttsDrag.pointerId); } catch (_) {}
                 _ttsDrag = null;
                 ttsBar.classList.remove('tts-dragging');
-                if (moved) { savePrefs(); showStatus('TTS bar moved — pick a preset in Settings to dock it again'); }
+                if (moved) { savePrefs(); showStatus('TTS bar moved'); }
             };
             ttsDragHandle.addEventListener('pointerup', _endTtsDrag);
             ttsDragHandle.addEventListener('pointercancel', _endTtsDrag);
+            // Double-click the grip to snap the bar back to its last preset slot.
+            ttsDragHandle.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                applyTtsBarPlacement(state.ttsBarPlacement || 'bottom-center');
+                showStatus('TTS bar docked');
+            });
             // Keyboard: arrow keys nudge (Shift = larger step). Keeps the bar
             // placeable without a mouse, complementing the Settings presets.
             ttsDragHandle.addEventListener('keydown', (e) => {
