@@ -3336,11 +3336,11 @@
 
         <!-- Overlays for Reading Support -->
         <div id="reading-line" class="reading-guide" style="display:none;" aria-hidden="true"></div>
-        <div id="reading-mask-top" class="reading-mask" style="display:none;" aria-hidden="true">
-           <div class="mask-handle-top" role="slider" aria-label="Top edge of reading window" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="30" aria-valuetext="Top edge of reading window, drag to resize" tabindex="0"></div>
+        <div id="reading-mask-top" class="reading-mask" style="display:none;">
+           <div class="mask-handle-top" role="slider" aria-label="Top edge of reading window" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="30" aria-valuetext="Top edge of reading window, drag or use arrow keys to resize" tabindex="0"></div>
         </div>
-        <div id="reading-mask-bottom" class="reading-mask" style="display:none;" aria-hidden="true">
-           <div class="mask-handle-bottom" role="slider" aria-label="Bottom edge of reading window" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="70" aria-valuetext="Bottom edge of reading window, drag to resize" tabindex="0"></div>
+        <div id="reading-mask-bottom" class="reading-mask" style="display:none;">
+           <div class="mask-handle-bottom" role="slider" aria-label="Bottom edge of reading window" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="70" aria-valuetext="Bottom edge of reading window, drag or use arrow keys to resize" tabindex="0"></div>
         </div>
         <div id="reading-mask-gap" class="mask-gap-hitbox" style="display:none;" aria-hidden="true"></div>
 
@@ -6108,6 +6108,7 @@
             }
             // Always update position after a mode/state change, then sync indicators
             applyReadingPosition();
+            updateMaskAria();
             syncAllIndicators();
             // (Viewport-region re-scan on pan/zoom now lives in updateVisuals(), which is
             // the function actually called when the view moves — updateReadingTools() is not.)
@@ -6146,6 +6147,66 @@
             applyReadingPosition();
             savePrefs();
         }
+
+        // --- Keyboard operability for the reading-mask resize handles (WCAG 2.1.1) ---
+        // The handles are role="slider" and focusable, but historically only had
+        // pointer handlers, so a keyboard / screen-reader user could focus them but
+        // not move them. These mirror the drag math for Arrow / Page / Home / End and
+        // keep aria-valuenow/-valuetext truthful as the edges move.
+        function updateMaskAria() {
+            const H = window.innerHeight || workspace.clientHeight || 1;
+            const topEdge = state.readingY - state.readingGap / 2;
+            const botEdge = state.readingY + state.readingGap / 2;
+            const th = maskTop.querySelector('.mask-handle-top');
+            const bh = maskBottom.querySelector('.mask-handle-bottom');
+            if (th) {
+                const v = Math.round(Math.min(100, Math.max(0, topEdge / H * 100)));
+                th.setAttribute('aria-valuenow', v);
+                th.setAttribute('aria-valuetext', `Top edge at ${v}% of screen — arrow keys resize`);
+            }
+            if (bh) {
+                const v = Math.round(Math.min(100, Math.max(0, botEdge / H * 100)));
+                bh.setAttribute('aria-valuenow', v);
+                bh.setAttribute('aria-valuetext', `Bottom edge at ${v}% of screen — arrow keys resize`);
+            }
+        }
+
+        function nudgeMaskEdge(which, e) {
+            if (state.readingMode !== 'mask') return;
+            const H = window.innerHeight || workspace.clientHeight || 800;
+            const small = Math.max(8, Math.round(H * 0.02));
+            const large = Math.max(24, Math.round(H * 0.10));
+            let edge = which === 'top'
+                ? state.readingY - state.readingGap / 2
+                : state.readingY + state.readingGap / 2;
+            let handled = true;
+            switch (e.key) {
+                case 'ArrowUp':   case 'ArrowLeft':  edge -= e.shiftKey ? large : small; break;
+                case 'ArrowDown': case 'ArrowRight': edge += e.shiftKey ? large : small; break;
+                case 'PageUp':    edge -= large; break;
+                case 'PageDown':  edge += large; break;
+                case 'Home':      edge = 0; break;
+                case 'End':       edge = H; break;
+                default:          handled = false;
+            }
+            if (!handled) return;
+            e.preventDefault();
+            e.stopPropagation(); // consume so arrows don't fall through to the global pan handler
+            state.readingAutoFollow = false;
+            const prevTarget = readingDragTarget;
+            readingDragTarget = which === 'top' ? 'mask-top' : 'mask-bottom';
+            handleReadingDrag(edge); // reuses the same clamp + applyReadingPosition + savePrefs
+            readingDragTarget = prevTarget;
+            syncAllIndicators();
+            updateMaskAria();
+        }
+
+        (function wireMaskHandleKeys() {
+            const th = maskTop.querySelector('.mask-handle-top');
+            const bh = maskBottom.querySelector('.mask-handle-bottom');
+            if (th) th.addEventListener('keydown', (e) => nudgeMaskEdge('top', e));
+            if (bh) bh.addEventListener('keydown', (e) => nudgeMaskEdge('bottom', e));
+        })();
 
         // Applies a brief smooth easing for discrete input (zoom buttons only).
         // Arrow key panning now uses its own velocity loop below.
@@ -7390,7 +7451,7 @@
             'btn-freeze':              () => { if(state.isFrozen){ttsAutoFroze=false;clearTimeout(_rescanTimer);toggleFreeze();clearTtsState('Press ▶ to read live');}else{ttsAutoFroze=false;if(state.isTtsEnabled)_primeTtsAudio();toggleFreeze(state.isTtsEnabled?runOcr:undefined);} },
             'btn-fullscreen':          () => { toggleFullscreen(); closeAllDropdowns(); },
             'btn-hide':                () => toggleMenu(),
-            'btn-advanced-settings':   () => { const m=document.getElementById('adv-settings-modal'); if(!m)return; m.classList.add('active'); m.setAttribute('aria-hidden','false'); document.getElementById('btn-advanced-settings')?.setAttribute('aria-expanded','true'); closeAllDropdowns(); requestAnimationFrame(()=>{ const f=m.querySelector('button,input,select,[tabindex]:not([tabindex="-1"])'); if(f)f.focus(); }); },
+            'btn-advanced-settings':   () => { const m=document.getElementById('adv-settings-modal'); if(!m)return; const tc=document.getElementById('toolbar-customize-modal'); if(tc){ tc.style.display='none'; tc.setAttribute('aria-hidden','true'); } m.classList.add('active'); m.setAttribute('aria-hidden','false'); document.getElementById('btn-advanced-settings')?.setAttribute('aria-expanded','true'); closeAllDropdowns(); requestAnimationFrame(()=>{ const f=m.querySelector('button,input,select,[tabindex]:not([tabindex="-1"])'); if(f)f.focus(); }); },
             'btn-tts-toolbar':         () => { state.isTtsEnabled=!state.isTtsEnabled; const b=document.getElementById('btn-tts-enable'); if(b){b.classList.toggle('active-state',state.isTtsEnabled);b.setAttribute('aria-pressed',state.isTtsEnabled);} setIndicator('ind-tts',state.isTtsEnabled); syncTtsBar(); showStatus(state.isTtsEnabled?'TTS Enabled':'TTS Disabled'); if(state.isTtsEnabled){initOcrEngineUI();const w=state.ocrEngine==='tesseract'||(state.ocrEngine==='auto'&&!NATIVE_OCR_SUPPORTED);if(w&&!tesseractReady&&!tesseractLoading)loadTesseract().catch(()=>{});} savePrefs(); },
             'btn-copy-log':            () => { const s={captured:new Date().toISOString(),userAgent:navigator.userAgent,url:window.location.href,entries:debugLog}; navigator.clipboard.writeText(JSON.stringify(s,null,2)).then(()=>showStatus(`Debug log copied (${debugLog.length} entries)`)).catch(()=>window.prompt('Copy log:',JSON.stringify(s,null,2))); },
             'btn-reading-none':        () => { state.readingMode='none'; updateReadingTools(); showStatus('Reading Tools Off'); savePrefs(); closeAllDropdowns(); },
@@ -9449,6 +9510,11 @@
                     }
 
                     dlog('ocr_preprocess', { lo, hi, ocrW, ocrH });
+                    // The OCR canvas holds its own copy of the pixels now, so release the
+                    // decoded source bitmap promptly instead of waiting on GC — matters under
+                    // sustained high-zoom snapshot loops.
+                    img.onload = img.onerror = null;
+                    img.src = '';
                     resolve({ canvas, srcX, srcY, srcW, srcH, ocrW, ocrH, frameW, frameH });
                 };
                 img.src = frameDataUrl;
@@ -9488,8 +9554,13 @@
         }
 
         // --- Run OCR on latestFrame — dispatches to Native or Tesseract ---
+        // If a re-trigger (engine/language switch) arrives while a run is in flight, the
+        // single-flight lock makes it no-op; _ocrRerunPending records that intent so the
+        // finally block schedules exactly one fresh run once the lock releases — otherwise
+        // the "Switching engine…" status would stick on stale output.
+        let _ocrRerunPending = false;
         async function runOcr() {
-            if (state.isOcrRunning) return;
+            if (state.isOcrRunning) { _ocrRerunPending = true; return; }
             // Claim the single-flight lock BEFORE any early return. Previously the
             // no-frame guard below returned while isOcrRunning was still false, so a
             // second rapid trigger (e.g. mashing Play before the first frame lands)
@@ -9595,6 +9666,7 @@
                 updateTtsControls();
             } finally {
                 state.isOcrRunning = false;
+                if (_ocrRerunPending) { _ocrRerunPending = false; setTimeout(runOcr, 0); }
             }
         }
 
@@ -10797,10 +10869,25 @@
             }
             if (e.key === 'Escape') {
                 e.stopPropagation();
-                ttsSettingsPanel.classList.remove('open');
-                btnTtsSettings.setAttribute('aria-expanded', 'false');
-                btnTtsSettings.focus();
+                closeTtsPanel();
             }
+        }
+
+        // Close the TTS settings panel from any "dismiss" path (Escape, backdrop /
+        // outside click). If focus is currently inside the panel — or has just
+        // fallen to <body> because a non-focusable area was clicked — return it to
+        // the toggle button so keyboard / screen-reader users are never stranded on
+        // <body> when the panel hides. (Paths that hand focus to another control,
+        // e.g. starting a drag or opening the text panel, deliberately do NOT use
+        // this and keep their own focus handling.)
+        function closeTtsPanel() {
+            if (!ttsSettingsPanel.classList.contains('open')) return;
+            const focusWasInside = ttsSettingsPanel.contains(document.activeElement) ||
+                                   document.activeElement === document.body ||
+                                   document.activeElement === null;
+            ttsSettingsPanel.classList.remove('open');
+            btnTtsSettings.setAttribute('aria-expanded', 'false');
+            if (focusWasInside) btnTtsSettings.focus();
         }
 
         ttsSettingsPanel.addEventListener('keydown', (e) => trapFocus(ttsSettingsPanel, e));
@@ -10821,8 +10908,7 @@
         });
         document.addEventListener('click', (e) => {
             if (!ttsSettingsPanel.contains(e.target) && e.target !== btnTtsSettings) {
-                ttsSettingsPanel.classList.remove('open');
-                btnTtsSettings.setAttribute('aria-expanded', 'false');
+                closeTtsPanel();
             }
         });
 
@@ -11225,6 +11311,7 @@
 
             // Non-remappable: numeric theme selectors (0–8), no modifiers
             if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key >= '0' && e.key <= '8') {
+                if (e.repeat) return; // discrete select — don't re-fire on key auto-repeat
                 clearTimeout(previewTimeout);
                 const idx = parseInt(e.key);
                 if (idx === 0) {
@@ -11238,12 +11325,14 @@
 
             // Non-remappable: custom theme modal
             if (e.key === '(' || (e.key === '9' && e.shiftKey)) {
+                if (e.repeat) return; // discrete — don't re-open on key auto-repeat
                 openCustomModal();
                 return;
             }
 
             // Non-remappable: extended themes toggle
             if (e.key === '9' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                if (e.repeat) return; // discrete toggle — don't flicker on key auto-repeat
                 if (document.body.classList.contains('video-active')) {
                     document.getElementById('btn-extended-themes').click();
                 } else {
@@ -11264,6 +11353,7 @@
 
             // Non-remappable: Escape (modal / dropdown / menu toggle)
             if (e.key === 'Escape') {
+                if (e.repeat) return; // discrete — a held Escape must not double-toggle
                 if (customModal.getAttribute('aria-hidden') !== 'true') {
                     closeCustomModal();
                 } else {
@@ -11287,6 +11377,11 @@
             if (!compoundKey) return; // pure modifier keypress, nothing to dispatch
             const actionId = getActionForKey(compoundKey);
             if (actionId) {
+                // Discrete toggles/one-shots (mask, line, contrast, invert, freeze,
+                // cycle-theme, …) must not auto-fire on OS key-repeat. Zoom is a
+                // continuous "hold to zoom" affordance — like pan — so it is allowed
+                // to repeat even when remapped to a custom key.
+                if (e.repeat && actionId !== 'zoom-in' && actionId !== 'zoom-out') return;
                 dispatchHotkeyAction(actionId, e);
             }
         });
