@@ -2592,6 +2592,178 @@
             .tc-tabs { padding: 0 8px; }
             .tc-tab-btn { padding: 10px 12px; font-size: 0.82rem; }
         }
+
+        /* ==================== MAGNIFIER LENS ==================== */
+        /* Cursor-following close-up window. pointer-events:none → the mouse keeps
+           hitting the workspace (pan, click-to-jump); touch drags are routed through
+           the workspace touch handlers. z 30 = above reading masks (19-21), below
+           the reading hint (40) and TTS bar. */
+        #lens {
+            display: none;
+            position: absolute;
+            z-index: 30;
+            pointer-events: none;
+            border: 3px solid rgba(255, 255, 255, 0.95);
+            outline: 2px solid rgba(0, 0, 0, 0.85); /* double ring → visible on any content */
+            border-radius: 14px;
+            box-shadow: 0 6px 28px rgba(0, 0, 0, 0.55);
+            overflow: hidden;
+            background: #000;
+        }
+        #lens.circle { border-radius: 50%; }
+        #lens canvas { display: block; width: 100%; height: 100%; }
+        #lens-msg {
+            position: absolute; inset: 0;
+            display: none;
+            align-items: center; justify-content: center;
+            color: #fff; font-size: 1.05rem; font-weight: 600;
+            text-align: center; padding: 12px;
+            background: rgba(0, 0, 0, 0.55);
+        }
+        #lens.no-frame #lens-msg { display: flex; }
+        body.lens-active #workspace { cursor: crosshair; }
+
+        /* ==================== VIEW LOCATOR (MINIMAP) ==================== */
+        /* Corner thumbnail of the full frame + a rectangle marking the visible region.
+           Sibling of #transform-layer so the theme filter never recolours it
+           (the canvas applies the same filter chain itself when drawing). */
+        #minimap {
+            display: none;
+            position: absolute;
+            right: 16px; bottom: 16px; /* default corner; hand-drag sets left/top inline */
+            z-index: 45;
+            border: 2px solid var(--chrome-border, #888);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.78);
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+            overflow: visible; /* grip + resize handles protrude past the corners */
+            touch-action: none;
+        }
+        #minimap canvas { display: block; border-radius: 8px; cursor: crosshair; }
+        #minimap-viewrect {
+            position: absolute;
+            border: 2px solid #ffd700;
+            /* dark halo inside and out so the gold rect reads on any thumbnail */
+            box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.8), inset 0 0 0 1.5px rgba(0, 0, 0, 0.8);
+            border-radius: 3px;
+            pointer-events: none;
+        }
+        #minimap-grip, #minimap-resize {
+            position: absolute;
+            width: calc(22px * var(--ui-scale, 1));
+            height: calc(22px * var(--ui-scale, 1));
+            display: flex; align-items: center; justify-content: center;
+            background: var(--chrome-bg, #222);
+            color: var(--chrome-text, #eee);
+            border: 1.5px solid var(--chrome-border, #888);
+            border-radius: 7px;
+            padding: 0;
+            cursor: grab;
+        }
+        #minimap-grip svg, #minimap-resize svg {
+            width: calc(10px * var(--ui-scale, 1));
+            height: calc(10px * var(--ui-scale, 1));
+        }
+        #minimap-grip   { top: calc(-11px * var(--ui-scale, 1)); left: calc(-11px * var(--ui-scale, 1)); }
+        #minimap-resize { bottom: calc(-11px * var(--ui-scale, 1)); right: calc(-11px * var(--ui-scale, 1)); cursor: nwse-resize; }
+        #minimap-grip:active { cursor: grabbing; }
+        #minimap.minimap-dragging { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7); }
+
+        /* ==================== ANNOTATIONS (NOTES) ==================== */
+        /* Viewport-space canvas, re-rendered from vector strokes on every view change.
+           Sibling of #transform-layer (outside the theme filter chain so ink colors
+           stay true under inverted/high-contrast themes). pointer-events:none — the
+           workspace handlers capture drawing input, same pattern as panning.
+           z 10 = above video/freeze (1-4), below reading guides (19-21) and lens (30). */
+        #annot-canvas {
+            display: none;
+            position: absolute;
+            inset: 0;
+            z-index: 10;
+            pointer-events: none;
+        }
+        body.annot-active #workspace { cursor: crosshair; }
+
+        /* Floating tool bar — top-centre of the workspace, scales with --ui-scale */
+        #annot-bar {
+            display: none;
+            position: absolute;
+            top: calc(10px * var(--ui-scale, 1));
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 55;
+            align-items: center;
+            gap: calc(4px * var(--ui-scale, 1));
+            padding: calc(6px * var(--ui-scale, 1)) calc(8px * var(--ui-scale, 1));
+            background: var(--chrome-bg, #1c1c1e);
+            color: var(--chrome-text, #eee);
+            border: 2px solid var(--chrome-border, #888);
+            border-radius: calc(12px * var(--ui-scale, 1));
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+            max-width: calc(100vw - 24px);
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        #annot-bar.open { display: flex; }
+        .annot-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: calc(34px * var(--ui-scale, 1));
+            height: calc(34px * var(--ui-scale, 1));
+            padding: 0;
+            background: transparent;
+            color: inherit;
+            border: 2px solid transparent;
+            border-radius: calc(8px * var(--ui-scale, 1));
+            cursor: pointer;
+        }
+        .annot-btn svg {
+            width: calc(18px * var(--ui-scale, 1));
+            height: calc(18px * var(--ui-scale, 1));
+        }
+        .annot-btn:hover { border-color: var(--chrome-border, #888); }
+        .annot-btn.annot-on {
+            background: var(--chrome-text, #eee);
+            color: var(--chrome-bg, #1c1c1e);
+            border-color: var(--chrome-text, #eee);
+        }
+        .annot-sep {
+            width: 2px;
+            align-self: stretch;
+            margin: calc(2px * var(--ui-scale, 1));
+            background: var(--chrome-border, #888);
+            opacity: 0.5;
+        }
+        .annot-color {
+            width: calc(24px * var(--ui-scale, 1));
+            height: calc(24px * var(--ui-scale, 1));
+            padding: 0;
+            border: 2px solid rgba(255, 255, 255, 0.55);
+            outline: 1.5px solid rgba(0, 0, 0, 0.55); /* visible on any chrome theme */
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .annot-color.annot-on {
+            border-color: var(--chrome-text, #fff);
+            outline: 2.5px solid var(--chrome-text, #fff);
+            outline-offset: 1.5px;
+        }
+        /* Size buttons show a dot that grows with the size they select */
+        .annot-size span {
+            display: block;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        #annot-size-s span { width: calc(5px * var(--ui-scale, 1));  height: calc(5px * var(--ui-scale, 1)); }
+        #annot-size-m span { width: calc(9px * var(--ui-scale, 1));  height: calc(9px * var(--ui-scale, 1)); }
+        #annot-size-l span { width: calc(14px * var(--ui-scale, 1)); height: calc(14px * var(--ui-scale, 1)); }
+        /* Save dropdown reuses the app's dropdown pattern */
+        #annot-bar .dropdown-content {
+            top: calc(100% + 6px);
+            left: auto;
+            right: 0;
+        }
     </style>
 </head>
 <body>
@@ -2645,6 +2817,7 @@
                 <label for="adv-tab-select" class="visually-hidden">Settings section</label>
                 <select id="adv-tab-select" aria-label="Settings section">
                     <option value="tab-appearance">Appearance</option>
+                    <option value="tab-zoom">Zoom &amp; Lens</option>
                     <option value="tab-video-controls">Video Controls</option>
                     <option value="tab-shortcuts">Shortcuts</option>
                     <option value="tab-memory">Memory</option>
@@ -2660,6 +2833,10 @@
                     <button class="adv-tab-btn active" role="tab" aria-selected="true" aria-controls="tab-appearance" data-tab="tab-appearance">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
                         Appearance
+                    </button>
+                    <button class="adv-tab-btn" role="tab" aria-selected="false" aria-controls="tab-zoom" data-tab="tab-zoom">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                        Zoom &amp; Lens
                     </button>
                     <button class="adv-tab-btn" role="tab" aria-selected="false" aria-controls="tab-video-controls" data-tab="tab-video-controls">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -2778,6 +2955,100 @@
                                 <button type="button" id="btn-spacing-reset" class="tool-btn" style="padding:6px 12px; font-size:0.82rem;" aria-label="Reset text spacing to defaults">Reset spacing</button>
                             </div>
                         </details>
+                    </div>
+
+                    <!-- Zoom & Lens panel -->
+                    <div id="tab-zoom" class="adv-tab-panel" role="tabpanel">
+                        <p class="adv-explainer">
+                            How zooming behaves — buttons, keyboard, scroll wheel, pinch and double-tap —
+                            plus the <strong>Magnifier Lens</strong> and the <strong>View Locator</strong> map.
+                        </p>
+
+                        <p class="adv-label" style="margin-bottom:6px;">Zoom increment — buttons &amp; +/− keys</p>
+                        <select id="zoom-step-select" aria-label="Zoom increment for the zoom buttons and plus/minus keys"
+                                style="width:100%; max-width:380px; padding:8px 10px; font-size:0.92rem; background:var(--bg-color); color:var(--text-color); border:1.5px solid var(--border-color); border-radius:8px; cursor:pointer;">
+                            <option value="auto">Adaptive — small steps zoomed out, bigger zoomed in (default)</option>
+                            <option value="0.1">10% per press</option>
+                            <option value="0.25">25% per press</option>
+                            <option value="0.5">50% per press</option>
+                            <option value="1">100% per press</option>
+                            <option value="2">200% per press</option>
+                        </select>
+                        <p class="adv-hint">Used by the toolbar Zoom In/Out buttons and the + / − keys.</p>
+
+                        <div class="toolbar-divider" role="separator" aria-hidden="true" style="width:100%; height:2px; margin: 16px 0 12px;"></div>
+
+                        <p class="adv-label" style="margin-bottom:6px;">Zoom anchoring</p>
+                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.95rem;">
+                            <input type="checkbox" id="zoom-anchor-toggle" checked style="width:20px; height:20px; flex-shrink:0; accent-color:var(--text-color); cursor:pointer;">
+                            Zoom toward the pointer
+                        </label>
+                        <p class="adv-hint">Scroll-wheel and pinch zoom dive toward the spot under your cursor or fingers, so what you're looking at stays put. Turn off to always zoom from the centre of the screen.</p>
+
+                        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.95rem; margin-top:12px;">
+                            <input type="checkbox" id="dbl-zoom-toggle" checked style="width:20px; height:20px; flex-shrink:0; accent-color:var(--text-color); cursor:pointer;">
+                            Double-click / double-tap zoom
+                        </label>
+                        <div style="display:flex; align-items:center; gap:10px; margin:8px 0 0 30px;">
+                            <label for="dbl-zoom-level" style="font-size:0.9rem;">Zoom to</label>
+                            <select id="dbl-zoom-level" aria-label="Double-tap zoom level"
+                                    style="padding:6px 10px; font-size:0.9rem; background:var(--bg-color); color:var(--text-color); border:1.5px solid var(--border-color); border-radius:8px; cursor:pointer;">
+                                <option value="2">200%</option>
+                                <option value="3" selected>300%</option>
+                                <option value="4">400%</option>
+                                <option value="6">600%</option>
+                            </select>
+                        </div>
+                        <p class="adv-hint">Double-click (or double-tap) the video to jump in at that spot; do it again to return to full view.</p>
+
+                        <div class="toolbar-divider" role="separator" aria-hidden="true" style="width:100%; height:2px; margin: 16px 0 12px;"></div>
+
+                        <p class="adv-label" style="margin-bottom:6px;">View Locator (L)</p>
+                        <p class="adv-hint" style="margin-top:0;">A small map showing where you are in the frame while zoomed in. Drag its handle to move it, the corner handle to resize it, and click inside the map to jump the view.</p>
+                        <div class="mode-selector" role="radiogroup" aria-label="View locator visibility">
+                            <label class="mode-card">
+                                <input type="radio" name="minimap-mode" value="off">
+                                Off
+                                <span class="mode-desc">Never shown</span>
+                            </label>
+                            <label class="mode-card">
+                                <input type="radio" name="minimap-mode" value="zoomed" checked>
+                                While zoomed
+                                <span class="mode-desc">Appears when<br>zoomed in</span>
+                            </label>
+                            <label class="mode-card">
+                                <input type="radio" name="minimap-mode" value="always">
+                                Always
+                                <span class="mode-desc">Always visible<br>during video</span>
+                            </label>
+                        </div>
+
+                        <div class="toolbar-divider" role="separator" aria-hidden="true" style="width:100%; height:2px; margin: 16px 0 12px;"></div>
+
+                        <p class="adv-label" style="margin-bottom:6px;">Magnifier Lens (G)</p>
+                        <p class="adv-hint" style="margin-top:0;">A magnifying glass that follows your pointer instead of zooming the whole screen. While it's on: scroll wheel changes its strength, arrow keys move it, and on touch screens you can drag it.</p>
+                        <div class="mode-selector" role="radiogroup" aria-label="Lens shape">
+                            <label class="mode-card">
+                                <input type="radio" name="lens-shape" value="rect" checked>
+                                Rectangle
+                                <span class="mode-desc">Wide reading<br>window</span>
+                            </label>
+                            <label class="mode-card">
+                                <input type="radio" name="lens-shape" value="circle">
+                                Circle
+                                <span class="mode-desc">Classic round<br>magnifying glass</span>
+                            </label>
+                        </div>
+                        <div class="adv-spacing-row" style="margin-top:12px;">
+                            <label for="lens-zoom-slider">Lens strength</label>
+                            <input type="range" id="lens-zoom-slider" min="1.2" max="8" step="0.1" value="2" aria-label="Lens magnification factor">
+                            <output id="lens-zoom-val" aria-hidden="true">2.0×</output>
+                        </div>
+                        <div class="adv-spacing-row">
+                            <label for="lens-size-slider">Lens size</label>
+                            <input type="range" id="lens-size-slider" min="0.6" max="2" step="0.05" value="1" aria-label="Lens window size">
+                            <output id="lens-size-val" aria-hidden="true">100%</output>
+                        </div>
                     </div>
 
                     <!-- Video Controls panel -->
@@ -3271,6 +3542,9 @@
             <h3 class="shortcut-category">Utilities</h3>
             <div class="hotkey-container-flex" role="list" aria-label="Utility Shortcuts">
                 <div class="hotkey-card remappable" role="listitem" data-action="large-cursor" tabindex="0" aria-label="Large Cursor: current key X" aria-pressed="false"><span aria-hidden="true">Large Cursor</span><kbd data-action-kbd="large-cursor">X</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="lens"         tabindex="0" aria-label="Magnifier Lens: current key G" aria-pressed="false"><span aria-hidden="true">Magnifier Lens</span><kbd data-action-kbd="lens">G</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="view-locator" tabindex="0" aria-label="View Locator: current key L" aria-pressed="false"><span aria-hidden="true">View Locator</span><kbd data-action-kbd="view-locator">L</kbd></div>
+                <div class="hotkey-card remappable" role="listitem" data-action="annotate"     tabindex="0" aria-label="Notes and drawing tools: current key N" aria-pressed="false"><span aria-hidden="true">Notes / Draw</span><kbd data-action-kbd="annotate">N</kbd></div>
                 <div class="hotkey-card remappable" role="listitem" data-action="freeze"       tabindex="0" aria-label="Freeze Frame: current key F" aria-pressed="false"><span aria-hidden="true">Freeze Frame</span><kbd data-action-kbd="freeze">F</kbd></div>
                 <div class="hotkey-card remappable" role="listitem" data-action="fullscreen"   tabindex="0" aria-label="Full Screen: current key M" aria-pressed="false"><span aria-hidden="true">Full Screen</span><kbd data-action-kbd="fullscreen">M</kbd></div>
                 <div class="hotkey-card remappable" role="listitem" data-action="hide-menu"    tabindex="0" aria-label="Hide Menu: current key H" aria-pressed="false"><span aria-hidden="true">Hide Menu</span><kbd data-action-kbd="hide-menu">H</kbd></div>
@@ -3327,6 +3601,90 @@
             </defs>
             <rect x="0" y="0" width="100" height="100" fill="#000" mask="url(#tts-dim-mask)"></rect>
         </svg>
+
+        <!-- Magnifier Lens — cursor-following close-up of the content under it.
+             pointer-events:none so mouse interaction (pan, TTS click-to-jump) passes
+             through; touch users drag it via the workspace touch handlers. The canvas
+             gets the SAME theme/filter chain as #transform-layer (it is not an iframe,
+             so this works even on Safari where iframe SVG filters don't). -->
+        <div id="lens" aria-hidden="true">
+            <canvas id="lens-canvas"></canvas>
+            <!-- Annotation overlay inside the lens — separate canvas so the strokes
+                 are NOT recoloured by the theme filter applied to #lens-canvas -->
+            <canvas id="lens-annot" style="position:absolute; inset:0; width:100%; height:100%;"></canvas>
+            <div id="lens-msg">Capturing&hellip;</div>
+        </div>
+
+        <!-- View Locator — corner thumbnail of the full frame with a rectangle marking
+             the visible region. Drag the grip to move the panel, the corner handle to
+             resize it, and click/drag inside the map to move the magnified view. -->
+        <div id="minimap" role="group" aria-label="View locator map">
+            <canvas id="minimap-canvas" aria-hidden="true"></canvas>
+            <div id="minimap-viewrect" aria-hidden="true"></div>
+            <button type="button" id="minimap-grip"
+                    aria-label="Move the view locator panel. Drag with the mouse, use arrow keys to nudge, or double-click to dock it back to the corner."
+                    title="Drag to move &middot; double-click to dock">
+                <svg viewBox="0 0 12 12" width="10" height="10" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.4"/><circle cx="9" cy="3" r="1.4"/><circle cx="3" cy="9" r="1.4"/><circle cx="9" cy="9" r="1.4"/></svg>
+            </button>
+            <button type="button" id="minimap-resize"
+                    aria-label="Resize the view locator panel. Drag with the mouse or use arrow keys."
+                    title="Drag to resize">
+                <svg viewBox="0 0 12 12" width="10" height="10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="11" y1="5" x2="5" y2="11"/><line x1="11" y1="9" x2="9" y2="11"/></svg>
+            </button>
+        </div>
+
+        <!-- Annotations (Notes) — vector strokes anchored to the video content,
+             re-rendered into this viewport canvas on every pan/zoom (always crisp).
+             Outside #transform-layer so the theme filter never recolours the ink. -->
+        <canvas id="annot-canvas" aria-hidden="true"></canvas>
+
+        <!-- Annotation tool bar — shown while annotate mode (N) is on -->
+        <div id="annot-bar" role="toolbar" aria-label="Annotation tools — draw on the video; notes stay anchored to the content as you zoom and pan">
+            <button type="button" class="annot-btn" id="annot-tool-pen" aria-label="Pen" aria-pressed="true" title="Pen">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19l7-7 3 3-7 7-3-3z"></path><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path><path d="M2 2l7.586 7.586"></path><circle cx="11" cy="11" r="2"></circle></svg>
+            </button>
+            <button type="button" class="annot-btn" id="annot-tool-hl" aria-label="Highlighter" aria-pressed="false" title="Highlighter">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l-6 6v3h9l3-3"></path><path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"></path></svg>
+            </button>
+            <button type="button" class="annot-btn" id="annot-tool-eraser" aria-label="Eraser — drag over a stroke to remove it" aria-pressed="false" title="Eraser (removes whole strokes)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20H7L3 16a2 2 0 0 1 0-3L13 3a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-9 9"></path><path d="M6 11l7 7"></path></svg>
+            </button>
+            <span class="annot-sep" aria-hidden="true"></span>
+            <button type="button" class="annot-color" data-color="#ff3b30" style="background:#ff3b30" aria-label="Red ink" aria-pressed="true" title="Red"></button>
+            <button type="button" class="annot-color" data-color="#ff9500" style="background:#ff9500" aria-label="Orange ink" aria-pressed="false" title="Orange"></button>
+            <button type="button" class="annot-color" data-color="#ffd60a" style="background:#ffd60a" aria-label="Yellow ink" aria-pressed="false" title="Yellow"></button>
+            <button type="button" class="annot-color" data-color="#34c759" style="background:#34c759" aria-label="Green ink" aria-pressed="false" title="Green"></button>
+            <button type="button" class="annot-color" data-color="#0a84ff" style="background:#0a84ff" aria-label="Blue ink" aria-pressed="false" title="Blue"></button>
+            <button type="button" class="annot-color" data-color="#bf5af2" style="background:#bf5af2" aria-label="Purple ink" aria-pressed="false" title="Purple"></button>
+            <button type="button" class="annot-color" data-color="#000000" style="background:#000000" aria-label="Black ink" aria-pressed="false" title="Black"></button>
+            <button type="button" class="annot-color" data-color="#ffffff" style="background:#ffffff" aria-label="White ink" aria-pressed="false" title="White"></button>
+            <span class="annot-sep" aria-hidden="true"></span>
+            <button type="button" class="annot-btn annot-size" id="annot-size-s" aria-label="Thin stroke" aria-pressed="false" title="Thin"><span aria-hidden="true"></span></button>
+            <button type="button" class="annot-btn annot-size" id="annot-size-m" aria-label="Medium stroke" aria-pressed="true" title="Medium"><span aria-hidden="true"></span></button>
+            <button type="button" class="annot-btn annot-size" id="annot-size-l" aria-label="Thick stroke" aria-pressed="false" title="Thick"><span aria-hidden="true"></span></button>
+            <span class="annot-sep" aria-hidden="true"></span>
+            <button type="button" class="annot-btn" id="annot-undo" aria-label="Undo last annotation (Z)" title="Undo (Z)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-15-6.7L3 13"></path></svg>
+            </button>
+            <button type="button" class="annot-btn" id="annot-clear" aria-label="Clear all annotations (undoable)" title="Clear all (undoable)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+            <span class="annot-sep" aria-hidden="true"></span>
+            <div class="dropdown" id="annot-save-wrap">
+                <button type="button" class="annot-btn" id="annot-save-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Save or load notes" title="Save / load notes">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                </button>
+                <div class="dropdown-content" id="annot-save-menu" role="menu" aria-label="Save or load notes">
+                    <button class="tool-btn" id="annot-export-png" role="menuitem" aria-label="Save a picture of the frame with your notes"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> Save Picture (frame + notes)</button>
+                    <button class="tool-btn" id="annot-export-json" role="menuitem" aria-label="Save the notes to a file"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Save Notes to File</button>
+                    <button class="tool-btn" id="annot-import-json" role="menuitem" aria-label="Load notes from a file"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> Load Notes from File&hellip;</button>
+                </div>
+            </div>
+            <button type="button" class="annot-btn" id="annot-close" aria-label="Close annotation tools (N)" title="Done (N)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+        <input type="file" id="annot-file-input" accept="application/json,.json" style="display:none" aria-hidden="true">
 
         <!-- Connecting indicator — shown while VDO.ninja WebRTC handshake is in progress -->
         <div id="connecting-indicator" role="status" aria-live="polite" aria-label="Connecting">
@@ -3650,6 +4008,30 @@
             }
             setPressed('btn-fullscreen', !!document.fullscreenElement);
             setPressed('btn-hide',       state.isMenuHidden);
+
+            // Standalone TTS toolbar button (re-created on every toolbar render)
+            const ttsToolbarBtn = document.getElementById('btn-tts-toolbar');
+            if (ttsToolbarBtn) {
+                ttsToolbarBtn.classList.toggle('active-state', state.isTtsEnabled);
+                ttsToolbarBtn.setAttribute('aria-pressed', state.isTtsEnabled ? 'true' : 'false');
+            }
+            // Magnifier Lens / View Locator / Notes (menu indicators + toolbar buttons)
+            const lensOn = (typeof lensActive !== 'undefined') && lensActive;
+            const annotOn = (typeof annotActive !== 'undefined') && annotActive;
+            setIndicator('ind-lens',    lensOn);
+            setChecked('btn-lens',      lensOn);
+            setIndicator('ind-locator', state.minimapMode !== 'off');
+            setChecked('btn-locator',   state.minimapMode !== 'off');
+            setIndicator('ind-annot',   annotOn);
+            setChecked('btn-annotate',  annotOn);
+            [['btn-lens-toolbar', lensOn],
+             ['btn-locator-toolbar', state.minimapMode !== 'off'],
+             ['btn-annotate-toolbar', annotOn]].forEach(([id, on]) => {
+                const b = document.getElementById(id);
+                if (!b) return;
+                b.classList.toggle('active-state', on);
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
         }
 
 
@@ -4061,6 +4443,9 @@
             { id: 'reading-mask',  label: 'Toggle Mask',    defaultKey: '.' },
             { id: 'auto-follow',   label: 'Auto-Follow',    defaultKey: '/' },
             { id: 'large-cursor',  label: 'Large Cursor',   defaultKey: 'x' },
+            { id: 'lens',          label: 'Magnifier Lens', defaultKey: 'g' },
+            { id: 'view-locator',  label: 'View Locator',   defaultKey: 'l' },
+            { id: 'annotate',      label: 'Notes / Draw',   defaultKey: 'n' },
             { id: 'freeze',        label: 'Freeze Frame',   defaultKey: 'f' },
             { id: 'fullscreen',    label: 'Full Screen',    defaultKey: 'm', toolbarSpanId: 'span-full',   toolbarLabel: 'Full Screen' },
             { id: 'hide-menu',     label: 'Hide Menu',      defaultKey: 'h', toolbarSpanId: 'span-hide',   toolbarLabel: 'Hide Menu' },
@@ -4280,6 +4665,9 @@
                     }
                     break;
                 case 'large-cursor': document.getElementById('btn-toggle-cursor').click(); break;
+                case 'lens':         toggleLens(); break;
+                case 'view-locator': toggleMinimap(); break;
+                case 'annotate':     toggleAnnotate(); break;
                 case 'freeze':       freezeBtn().click(); break;
                 case 'fullscreen':   toggleFullscreen(); break;
                 case 'hide-menu':    toggleMenu(); break;
@@ -4465,7 +4853,29 @@
             customFont: null,                // {name, cssStack, source} when a searched font is active
             // Selective memory flags (which state groups are saved/restored)
             memTheme: true, memZoom: true, memVideoControls: true,
-            memReadingTools: true, memTts: true
+            memReadingTools: true, memTts: true,
+            // Zoom behavior (Settings → Zoom & Lens)
+            zoomAnchorPointer: true,  // wheel/pinch zoom anchors at the pointer / pinch midpoint
+            zoomStepPref: null,       // null = adaptive steps; number = fixed step in scale units (0.5 = 50%)
+            dblClickZoom: true,       // double-click / double-tap toggles zoom at that spot
+            dblClickZoomLevel: 3,     // target scale for double-click zoom
+            // View Locator (minimap)
+            minimapMode: 'zoomed',    // 'off' | 'zoomed' (only while zoomed in) | 'always'
+            minimapFreeX: null,       // workspace-px top-left when hand-dragged (null = default corner)
+            minimapFreeY: null,
+            minimapW: 220,            // thumbnail width in px (drag corner handle to resize)
+            // Magnifier Lens
+            lensShape: 'rect',        // 'rect' | 'circle'
+            lensZoom: 2,              // magnification factor relative to the view under the lens
+            lensSize: 1,              // size multiplier for the lens window
+            // One-time upgrade flag: TTS toolbar button seeded into saved menubar configs
+            menubarTtsSeeded: false,
+            // Annotation (Notes) tool preferences — the strokes themselves live in
+            // localStorage under 'vdoMagnifierNotes', keyed by session URL.
+            annotTool: 'pen',          // 'pen' | 'hl' | 'eraser'
+            annotColor: '#ff3b30',     // active ink color
+            annotSize: 'm',            // 's' | 'm' | 'l'
+            menubarNotesSeeded: false  // one-time upgrade flag, like menubarTtsSeeded
         };
 
         let readingDragTarget = null; 
@@ -4477,6 +4887,36 @@
         // Declared here (hoisted) because startBtn handler and screen share both write it
         // before the hover-pan section that originally owned the declaration.
         let cachedWorkspaceRect = null;
+
+        // --- Magnifier Lens / View Locator shared flags ---
+        // Declared early so updateVisuals/syncAllIndicators (which run during init)
+        // can reference them; the engine itself lives at the end of this script.
+        let lensActive = false;
+        let lensX = 0, lensY = 0;            // lens centre, workspace-relative px
+        let _lensRaf = null, _lensDirty = true;
+        let _minimapVisible = false;
+        let _minimapTimer = null;            // thumbnail refresh interval while visible
+        let _toolsSnapTimer = null;          // remote-stream frame feed for lens/locator
+        let _minimapLastOnMode = 'zoomed';   // restored when toggling the locator back on
+        let _minimapAR = 16 / 9;             // frame aspect ratio (updated from real frames)
+        let _frameImgCache = { src: null, img: null, ready: false };
+        // Filter chain currently applied to #transform-layer — mirrored onto the lens
+        // and locator canvases so their pixels match the themed main view.
+        let _currentWrapperFilter = 'none';
+
+        // --- Annotation (Notes) shared flags ---
+        // Strokes are vectors in video-fraction coordinates (0..1 of the displayed
+        // video box) so they anchor to the content through zoom/pan/resize and
+        // re-render crisply at any magnification. Engine lives at the end of the script.
+        let annotActive = false;       // annotate mode on (input captured for drawing)
+        let annotStrokes = [];         // committed strokes for the current session
+        let annotUndoStack = [];       // reversible ops: {type:'draw'|'erase'|'clear'|'import', ...}
+        let _annotLive = null;         // stroke currently being drawn (not yet committed)
+        let _annotErasing = false;     // eraser drag in progress
+        let _annotEraseBatch = null;   // strokes removed during the current eraser drag
+        let _annotRaf = null;          // rAF handle for in-progress redraws
+        let _annotSaveTimer = null;    // debounced localStorage autosave
+        let _annotRestoredFor = null;  // session URL whose notes are currently loaded
 
         // ================================================================
         // CONNECTING INDICATOR
@@ -5786,6 +6226,7 @@
                 updateVisuals();
                 updateReadingTools();
                 syncTtsBarOnVideoStart();
+                annotOnVideoStart(); // restore saved notes for this session
                 showStatus("Screen Share Active");
                 announceSrMode(true);
                 savePrefs();
@@ -5852,6 +6293,7 @@
                 updateVisuals();
                 updateReadingTools();
                 syncTtsBarOnVideoStart();
+                annotOnVideoStart(); // restore saved notes for this session
                 showStatus("Video Started");
                 announceSrMode(true);
                 savePrefs();
@@ -6042,7 +6484,15 @@
                 }
 
                 transformLayer.style.filter = wrapperFilter.trim() || 'none';
+                _currentWrapperFilter = transformLayer.style.filter;
                 if(zoomOutBtn()) zoomOutBtn().disabled = (state.streamScale <= 1.0);
+
+                // View Locator + Lens + Annotations track every pan/zoom/theme change.
+                // All are cheap when nothing changed (style writes / a dirty flag /
+                // an early-out when no strokes exist).
+                updateMinimapVisibility();
+                _lensDirty = true;
+                renderAnnotations();
 
                 // Viewport-region OCR follows the view: when reading the "current zoomed
                 // area" while frozen, a pan or zoom changes which text is visible, so
@@ -6309,15 +6759,30 @@
             }
         }
 
-        function setScale(newScale) {
+        // setScale(newScale [, focalClientX, focalClientY])
+        // Optional focal point (viewport/client px): the content under that point stays
+        // stationary while zooming — wheel zoom anchors at the cursor, pinch at the touch
+        // midpoint. Omitted (buttons, keyboard, reset) ⇒ anchors at the workspace centre,
+        // which is also the behaviour when the "Zoom toward pointer" setting is off.
+        function setScale(newScale, focalClientX, focalClientY) {
             const isVideoActive = document.body.classList.contains('video-active');
             if (isVideoActive) {
                 // FIX: Restore upper bound cap using CONSTANTS.MAX_SCALE to prevent unbounded zoom
                 const targetScale = Math.max(1.0, Math.min(newScale, CONSTANTS.MAX_SCALE));
                 if (state.streamScale > 0) {
                     const ratio = targetScale / state.streamScale;
-                    state.panX *= ratio;
-                    state.panY *= ratio;
+                    // Anchor point relative to the workspace centre (0,0 = centre anchor).
+                    // pan' = f + (pan − f)·ratio keeps the content point under f fixed;
+                    // with f = 0 this reduces to the original pan·ratio centre anchor.
+                    let fx = 0, fy = 0;
+                    if (state.zoomAnchorPointer &&
+                        typeof focalClientX === 'number' && typeof focalClientY === 'number') {
+                        const rect = getWorkspaceRect();
+                        fx = focalClientX - (rect.left + rect.width / 2);
+                        fy = focalClientY - (rect.top + rect.height / 2);
+                    }
+                    state.panX = fx + (state.panX - fx) * ratio;
+                    state.panY = fy + (state.panY - fy) * ratio;
                 }
                 state.streamScale = targetScale;
                 showStatus(`Zoom: ${Math.round(state.streamScale * 100)}%`);
@@ -6333,8 +6798,10 @@
             const isVideoActive = document.body.classList.contains('video-active');
             const currentScale = isVideoActive ? state.streamScale : state.homeScale;
             let targetScale;
-            if (customZoomStep) {
-                targetScale = currentScale + (customZoomStep * direction);
+            // Step precedence: ?step= URL param → user's saved increment → adaptive curve
+            const fixedStep = customZoomStep || state.zoomStepPref;
+            if (fixedStep) {
+                targetScale = Math.round((currentScale + fixedStep * direction) * 100) / 100;
             } else {
                 let step;
                 if (direction > 0) {
@@ -6924,6 +7391,21 @@
                 removable: true, singleton: true, type: 'button',
             },
             {
+                id: 'lens', label: 'Magnifier Lens', sub: 'Shortcut: G',
+                icon: '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><circle cx="11" cy="11" r="2.5" fill="currentColor" stroke="none"/>',
+                removable: true, singleton: true, type: 'button',
+            },
+            {
+                id: 'view-locator', label: 'View Locator', sub: 'Shortcut: L',
+                icon: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="13" y="12" width="6" height="5" rx="1" fill="currentColor" stroke="none"/>',
+                removable: true, singleton: true, type: 'button',
+            },
+            {
+                id: 'annotate', label: 'Notes', sub: 'Shortcut: N',
+                icon: '<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>',
+                removable: true, singleton: true, type: 'button',
+            },
+            {
                 id: 'contrast', label: 'Contrast', sub: 'Toggle boost',
                 icon: '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>',
                 removable: true, singleton: true, type: 'button',
@@ -7019,6 +7501,8 @@
             { id: 'themes',        visible: true, themeCount: 8 },
             { id: 'separator',     visible: true, _uid: 's2' },
             { id: 'reading-tools', visible: true },
+            { id: 'tts',           visible: true },
+            { id: 'annotate',      visible: true },
             { id: 'separator',     visible: true, _uid: 's3' },
             { id: 'more-options',  visible: true },
             { id: 'settings',      visible: true },
@@ -7039,6 +7523,29 @@
             const themesCfg = state.menubarConfig.find(c => c.id === 'themes');
             if (themesCfg && (themesCfg.themeCount == null || themesCfg.themeCount < 8)) {
                 themesCfg.themeCount = 8;
+            }
+            // One-time upgrade: promote the TTS toggle to a standalone toolbar button for
+            // configs saved before it joined the default layout. The seed flag makes this
+            // run once — a user who removes the button afterwards stays without it.
+            if (!state.menubarTtsSeeded) {
+                if (!state.menubarConfig.find(c => c.id === 'tts')) {
+                    const item = { id: 'tts', visible: true };
+                    const rtIdx = state.menubarConfig.findIndex(c => c.id === 'reading-tools');
+                    if (rtIdx >= 0) state.menubarConfig.splice(rtIdx + 1, 0, item);
+                    else state.menubarConfig.push(item);
+                }
+                state.menubarTtsSeeded = true;
+            }
+            // Same one-time seed for the Notes (annotation) button
+            if (!state.menubarNotesSeeded) {
+                if (!state.menubarConfig.find(c => c.id === 'annotate')) {
+                    const item = { id: 'annotate', visible: true };
+                    const anchorIdx = state.menubarConfig.findIndex(c => c.id === 'tts');
+                    const rtIdx = anchorIdx >= 0 ? anchorIdx : state.menubarConfig.findIndex(c => c.id === 'reading-tools');
+                    if (rtIdx >= 0) state.menubarConfig.splice(rtIdx + 1, 0, item);
+                    else state.menubarConfig.push(item);
+                }
+                state.menubarNotesSeeded = true;
             }
             // Give separators unique _uid if missing
             let sepIdx = 0;
@@ -7082,6 +7589,9 @@
                     case 'themes':          _tcInjectThemes(item.themeCount ?? 8);        break;
                     case 'reading-tools':   toolbar.appendChild(_tcMakeReadingTools());   break;
                     case 'tts':             toolbar.appendChild(_tcMakeTtsBtn());         break;
+                    case 'lens':            toolbar.appendChild(_tcMakeLensBtn());        break;
+                    case 'view-locator':    toolbar.appendChild(_tcMakeLocatorBtn());     break;
+                    case 'annotate':        toolbar.appendChild(_tcMakeAnnotateBtn());    break;
                     case 'contrast':        toolbar.appendChild(_tcMakeContrast());       break;
                     case 'invert':          toolbar.appendChild(_tcMakeInvert());         break;
                     case 'flip-h':          toolbar.appendChild(_tcMakeSimpleBtn('btn-flip-h',      'Flip Horizontal', TOOLBAR_ITEM_REGISTRY.find(r=>r.id==="flip-h").icon,      'ind-flip-h'));   break;
@@ -7295,6 +7805,36 @@
             btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg><span aria-hidden="true">TTS</span>`;
             return btn;
         }
+        function _tcMakeLensBtn() {
+            const entry = TOOLBAR_ITEM_REGISTRY.find(r => r.id === 'lens');
+            const btn = document.createElement('button');
+            btn.className = 'tool-btn';
+            btn.id = 'btn-lens-toolbar';
+            btn.setAttribute('aria-label', 'Toggle Magnifier Lens');
+            btn.setAttribute('aria-pressed', 'false');
+            btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${entry.icon}</svg><span aria-hidden="true">Lens</span>`;
+            return btn;
+        }
+        function _tcMakeLocatorBtn() {
+            const entry = TOOLBAR_ITEM_REGISTRY.find(r => r.id === 'view-locator');
+            const btn = document.createElement('button');
+            btn.className = 'tool-btn';
+            btn.id = 'btn-locator-toolbar';
+            btn.setAttribute('aria-label', 'Toggle View Locator');
+            btn.setAttribute('aria-pressed', 'false');
+            btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${entry.icon}</svg><span aria-hidden="true">Locator</span>`;
+            return btn;
+        }
+        function _tcMakeAnnotateBtn() {
+            const entry = TOOLBAR_ITEM_REGISTRY.find(r => r.id === 'annotate');
+            const btn = document.createElement('button');
+            btn.className = 'tool-btn';
+            btn.id = 'btn-annotate-toolbar';
+            btn.setAttribute('aria-label', 'Toggle annotation tools — draw notes on the video');
+            btn.setAttribute('aria-pressed', 'false');
+            btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${entry.icon}</svg><span aria-hidden="true">Notes</span>`;
+            return btn;
+        }
         function _tcMakeContrast() {
             const entry = TOOLBAR_ITEM_REGISTRY.find(r => r.id === 'contrast');
             const btn = _tcSvgBtn('btn-contrast-toolbar', 'Toggle Contrast', entry.icon, 'aria-checked=false;role=menuitemcheckbox');
@@ -7438,6 +7978,32 @@
             return btn;
         }
 
+        // Single toggle path for TTS — keeps the Reading-Tools checkbox, the standalone
+        // toolbar button, and the menu indicator in lock-step however TTS is toggled.
+        function syncTtsToggleButtons() {
+            const on = state.isTtsEnabled;
+            ['btn-tts-enable', 'btn-tts-toolbar'].forEach(id => {
+                const b = document.getElementById(id);
+                if (b) { b.classList.toggle('active-state', on); b.setAttribute('aria-pressed', on); }
+            });
+            // The dropdown entry is a menuitemcheckbox — its checked state is aria-checked
+            const cb = document.getElementById('btn-tts-enable');
+            if (cb) cb.setAttribute('aria-checked', on ? 'true' : 'false');
+            setIndicator('ind-tts', on);
+        }
+        function setTtsEnabled(on) {
+            state.isTtsEnabled = on;
+            syncTtsToggleButtons();
+            syncTtsBar();
+            showStatus(on ? 'TTS Enabled' : 'TTS Disabled');
+            if (on) {
+                initOcrEngineUI();
+                const w = state.ocrEngine === 'tesseract' || (state.ocrEngine === 'auto' && !NATIVE_OCR_SUPPORTED);
+                if (w && !tesseractReady && !tesseractLoading) loadTesseract().catch(() => {});
+            }
+            savePrefs();
+        }
+
         // Re-wire all button/dropdown listeners after toolbar re-render
         // ================================================================
         // PERMANENT TOOLBAR EVENT DELEGATION
@@ -7446,13 +8012,19 @@
         // ================================================================
 
         const TOOLBAR_ACTION_MAP = {
+            'btn-lens':                () => { toggleLens(); closeAllDropdowns(); },
+            'btn-lens-toolbar':        () => toggleLens(),
+            'btn-locator':             () => { toggleMinimap(); closeAllDropdowns(); },
+            'btn-locator-toolbar':     () => toggleMinimap(),
+            'btn-annotate':            () => { toggleAnnotate(); closeAllDropdowns(); },
+            'btn-annotate-toolbar':    () => toggleAnnotate(),
             'btn-zoom-in':             () => performZoom(1),
             'btn-zoom-out':            () => performZoom(-1),
             'btn-freeze':              () => { if(state.isFrozen){ttsAutoFroze=false;clearTimeout(_rescanTimer);toggleFreeze();clearTtsState('Press ▶ to read live');}else{ttsAutoFroze=false;if(state.isTtsEnabled)_primeTtsAudio();toggleFreeze(state.isTtsEnabled?runOcr:undefined);} },
             'btn-fullscreen':          () => { toggleFullscreen(); closeAllDropdowns(); },
             'btn-hide':                () => toggleMenu(),
             'btn-advanced-settings':   () => { const m=document.getElementById('adv-settings-modal'); if(!m)return; const tc=document.getElementById('toolbar-customize-modal'); if(tc){ tc.style.display='none'; tc.setAttribute('aria-hidden','true'); } m.classList.add('active'); m.setAttribute('aria-hidden','false'); document.getElementById('btn-advanced-settings')?.setAttribute('aria-expanded','true'); closeAllDropdowns(); requestAnimationFrame(()=>{ const f=m.querySelector('button,input,select,[tabindex]:not([tabindex="-1"])'); if(f)f.focus(); }); },
-            'btn-tts-toolbar':         () => { state.isTtsEnabled=!state.isTtsEnabled; const b=document.getElementById('btn-tts-enable'); if(b){b.classList.toggle('active-state',state.isTtsEnabled);b.setAttribute('aria-pressed',state.isTtsEnabled);} setIndicator('ind-tts',state.isTtsEnabled); syncTtsBar(); showStatus(state.isTtsEnabled?'TTS Enabled':'TTS Disabled'); if(state.isTtsEnabled){initOcrEngineUI();const w=state.ocrEngine==='tesseract'||(state.ocrEngine==='auto'&&!NATIVE_OCR_SUPPORTED);if(w&&!tesseractReady&&!tesseractLoading)loadTesseract().catch(()=>{});} savePrefs(); },
+            'btn-tts-toolbar':         () => setTtsEnabled(!state.isTtsEnabled),
             'btn-copy-log':            () => { const s={captured:new Date().toISOString(),userAgent:navigator.userAgent,url:window.location.href,entries:debugLog}; navigator.clipboard.writeText(JSON.stringify(s,null,2)).then(()=>showStatus(`Debug log copied (${debugLog.length} entries)`)).catch(()=>window.prompt('Copy log:',JSON.stringify(s,null,2))); },
             'btn-reading-none':        () => { state.readingMode='none'; updateReadingTools(); showStatus('Reading Tools Off'); savePrefs(); closeAllDropdowns(); },
             'btn-reading-line':        () => { state.readingMode=state.readingMode==='line'?'none':'line'; updateReadingTools(); showStatus(state.readingMode==='line'?'Reading Line On':'Reading Tools Off'); savePrefs(); closeAllDropdowns(); },
@@ -7462,7 +8034,7 @@
             'btn-mask-small':          () => { applyMaskPreset(MASK_PRESETS.small);  savePrefs(); closeAllDropdowns(); },
             'btn-mask-medium':         () => { applyMaskPreset(MASK_PRESETS.medium); savePrefs(); closeAllDropdowns(); },
             'btn-mask-large':          () => { applyMaskPreset(MASK_PRESETS.large);  savePrefs(); closeAllDropdowns(); },
-            'btn-tts-enable':          () => { state.isTtsEnabled=!state.isTtsEnabled; const b=document.getElementById('btn-tts-enable'); if(b){b.classList.toggle('active-state',state.isTtsEnabled);b.setAttribute('aria-pressed',state.isTtsEnabled);} setIndicator('ind-tts',state.isTtsEnabled); syncTtsBar(); showStatus(state.isTtsEnabled?'TTS Enabled':'TTS Disabled'); if(state.isTtsEnabled){initOcrEngineUI();const w=state.ocrEngine==='tesseract'||(state.ocrEngine==='auto'&&!NATIVE_OCR_SUPPORTED);if(w&&!tesseractReady&&!tesseractLoading)loadTesseract().catch(()=>{});} savePrefs(); },
+            'btn-tts-enable':          () => setTtsEnabled(!state.isTtsEnabled),
             'btn-toggle-hover-pan':    () => { state.hoverPan=!state.hoverPan; if(!state.hoverPan)stopHoverPanLoop(); syncAllIndicators(); showStatus(state.hoverPan?'Hover Panning: ON':'Hover Panning: OFF'); savePrefs(); },
             'btn-flip-h':              () => { state.flipH=!state.flipH; updateVisuals(); syncAllIndicators(); showStatus(state.flipH?'Flipped Horizontally':'Flip H: OFF'); savePrefs(); },
             'btn-flip-v':              () => { state.flipV=!state.flipV; updateVisuals(); syncAllIndicators(); showStatus(state.flipV?'Flipped Vertically':'Flip V: OFF'); savePrefs(); },
@@ -7473,7 +8045,7 @@
             'btn-toggle-reduce-motion':() => { state.reduceMotion=!state.reduceMotion; if(state.reduceMotion){document.body.classList.add('reduce-motion-active');stopMomentum();stopHoverPanLoop();stopKeyPanLoop();}else document.body.classList.remove('reduce-motion-active'); syncAllIndicators(); showStatus(state.reduceMotion?'Reduce Motion: ON':'Reduce Motion: OFF'); savePrefs(); },
             'btn-toggle-dyslexia-font':() => { cycleFontNext(); const ae=FONT_REGISTRY.find(f=>f.id===state.activeFontId); const isDef=state.activeFontId==='default'; const lbl=document.getElementById('text-dyslexia-font'); if(lbl)lbl.textContent=isDef?'Dyslexia-Friendly Font':`Font: ${ae.name}`; syncAllIndicators(); showStatus(isDef?'Font: System Default':`Font: ${ae.name}`); savePrefs(); },
             'btn-scan':                () => { state.isScanActive=!state.isScanActive; const sb=document.getElementById('btn-scan'); if(state.isScanActive){if(!state.isFrozen)startSnapshotPipeline();if(sb){sb.classList.add('active-state');sb.setAttribute('aria-pressed','true');}setIndicator('ind-scan',true);showStatus('Frame Scanning ON');}else{stopSnapshotPipeline();if(sb){sb.classList.remove('active-state');sb.setAttribute('aria-pressed','false');}setIndicator('ind-scan',false);showStatus('Frame Scanning OFF');} savePrefs(); },
-            'btn-toggle-no-memory':    () => { state.noMemory=!state.noMemory; const nmb=document.getElementById('btn-toggle-no-memory'); if(state.noMemory){if(nmb)nmb.classList.add('active-state');try{localStorage.removeItem('vdoMagnifierPrefs');localStorage.removeItem('vdoMagnifierThemes');}catch(e2){}showStatus('Preferences: Not Saved');}else{if(nmb)nmb.classList.remove('active-state');savePrefs();showStatus('Preferences: Saving');} syncAllIndicators(); },
+            'btn-toggle-no-memory':    () => { state.noMemory=!state.noMemory; const nmb=document.getElementById('btn-toggle-no-memory'); if(state.noMemory){if(nmb)nmb.classList.add('active-state');try{localStorage.removeItem('vdoMagnifierPrefs');localStorage.removeItem('vdoMagnifierThemes');localStorage.removeItem('vdoMagnifierNotes');}catch(e2){}showStatus('Preferences: Not Saved');}else{if(nmb)nmb.classList.remove('active-state');savePrefs();showStatus('Preferences: Saving');} syncAllIndicators(); },
             'btn-reset-view':          () => { state.streamScale=1;state.panX=0;state.panY=0;state.flipH=false;state.flipV=false;updateVisuals();syncAllIndicators();showStatus('View Reset');savePrefs(); },
             // Promoted quick-access buttons (video-settings is now a dropdown, handled below)
             'btn-menubar-settings-toolbar':() => { closeToolbarCustomizer(); _tcOpenAdvModal('tab-menubar'); },
@@ -7535,6 +8107,9 @@
             const menu = document.getElementById('more-options-menu');
             if (!menu || menu.children.length > 0) return;
             menu.innerHTML = `
+                <button class="tool-btn" id="btn-lens" role="menuitemcheckbox" aria-label="Toggle magnifier lens" aria-checked="false"><span class="menu-indicator" id="ind-lens" aria-hidden="true">□</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16" y2="16"></line><circle cx="11" cy="11" r="2.5" fill="currentColor" stroke="none"></circle></svg> Magnifier Lens (G)</button>
+                <button class="tool-btn" id="btn-locator" role="menuitemcheckbox" aria-label="Toggle view locator map" aria-checked="false"><span class="menu-indicator" id="ind-locator" aria-hidden="true">□</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><rect x="13" y="12" width="6" height="5" rx="1" fill="currentColor" stroke="none"></rect></svg> View Locator (L)</button>
+                <button class="tool-btn" id="btn-annotate" role="menuitemcheckbox" aria-label="Toggle annotation tools" aria-checked="false"><span class="menu-indicator" id="ind-annot" aria-hidden="true">□</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19l7-7 3 3-7 7-3-3z"></path><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path><path d="M2 2l7.586 7.586"></path><circle cx="11" cy="11" r="2"></circle></svg> Notes / Draw (N)</button>
                 <button class="tool-btn" id="btn-toggle-hover-pan" role="menuitemcheckbox" aria-label="Toggle Pointer Hover Panning" aria-checked="false"><span class="menu-indicator" id="ind-hover-pan" aria-hidden="true">□</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9l6-6 6 6M11 3v11M5 15l6 6 6-6M11 21v-11"></path></svg> Hover Pan (P)</button>
                 <button class="tool-btn" id="btn-mute" role="menuitemcheckbox" aria-label="Toggle Audio Mute" aria-checked="false"><span class="menu-indicator" id="ind-mute" aria-hidden="true">□</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg> <span id="text-mute">Mute Audio</span></button>
                 <button class="tool-btn" id="btn-flip-h" role="menuitemcheckbox" aria-label="Flip Image Horizontally" aria-checked="false"><span class="menu-indicator" id="ind-flip-h" aria-hidden="true">□</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 9 21 13 17 17"></polyline><polyline points="7 9 3 13 7 17"></polyline><line x1="12" y1="3" x2="12" y2="21"></line></svg> Flip Horizontal</button>
@@ -8736,6 +9311,7 @@
                             // Reset so user lands back on the home screen
                             if (typeof clearTtsState === 'function') clearTtsState();
                             stopSnapshotPipeline();
+                            deactivateViewTools(); // lens + view locator off
                             document.body.classList.remove('video-active', 'is-frozen');
                             workspace.style.display = 'none';
                             document.getElementById('setup-screen-wrapper').style.display = '';
@@ -11141,9 +11717,7 @@
             }
             if (saved.isTtsEnabled) {
                 state.isTtsEnabled = true;
-                const btn = document.getElementById('btn-tts-enable');
-                if (btn) { btn.classList.add('active-state'); btn.setAttribute('aria-pressed', 'true'); }
-                setIndicator('ind-tts', true);
+                syncTtsToggleButtons();
                 syncTtsBar();
                 initOcrEngineUI();
                 // Pre-load Tesseract only if it will be used
@@ -11341,8 +11915,19 @@
                 return;
             }
 
-            // Non-remappable: WASD / Arrow key pan (held-key engine), no modifiers
+            // Non-remappable: WASD / Arrow key pan (held-key engine), no modifiers.
+            // While the Magnifier Lens is active the same keys move the LENS instead
+            // (the base view is usually at 1×, where panning is a no-op anyway).
             if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                if (lensActive && document.body.classList.contains('video-active') && !e.shiftKey) {
+                    const LENS_KEY_STEP = 28; // px per keydown; OS key-repeat gives continuity
+                    switch (e.key) {
+                        case 'ArrowUp':    case 'w': e.preventDefault(); moveLensBy(0, -LENS_KEY_STEP); return;
+                        case 'ArrowDown':  case 's': e.preventDefault(); moveLensBy(0,  LENS_KEY_STEP); return;
+                        case 'ArrowLeft':  case 'a': e.preventDefault(); moveLensBy(-LENS_KEY_STEP, 0); return;
+                        case 'ArrowRight': case 'd': e.preventDefault(); moveLensBy( LENS_KEY_STEP, 0); return;
+                    }
+                }
                 switch (e.key) {
                     case 'ArrowUp':    case 'w': if (!e.shiftKey) { e.preventDefault(); pressKeyPan('up');    return; } break;
                     case 'ArrowDown':  case 's': if (!e.shiftKey) { e.preventDefault(); pressKeyPan('down');  return; } break;
@@ -11351,11 +11936,21 @@
                 }
             }
 
+            // Annotation mode: bare Z = undo (no modifiers; ctrl/cmd+z stays with the browser)
+            if (annotActive && !e.ctrlKey && !e.altKey && !e.metaKey &&
+                (e.key === 'z' || e.key === 'Z')) {
+                e.preventDefault();
+                annotUndo();
+                return;
+            }
+
             // Non-remappable: Escape (modal / dropdown / menu toggle)
             if (e.key === 'Escape') {
                 if (e.repeat) return; // discrete — a held Escape must not double-toggle
                 if (customModal.getAttribute('aria-hidden') !== 'true') {
                     closeCustomModal();
+                } else if (annotActive) {
+                    toggleAnnotate(); // leave drawing mode before any menu toggling
                 } else {
                     const advModal = document.getElementById('adv-settings-modal');
                     if (advModal && advModal.classList.contains('active')) {
@@ -11499,6 +12094,13 @@
                 }
             }
 
+            // Annotation mode: left-drag draws or erases instead of panning
+            // (pan stays available via keyboard, wheel, and the View Locator).
+            if (annotActive && e.button === 0) {
+                annotPointerDown(e.clientX, e.clientY);
+                return;
+            }
+
             isDragging = true;
             // Stop any ongoing hover pan or keyboard pan momentum so drag takes over cleanly
             stopHoverPanLoop();
@@ -11514,6 +12116,17 @@
             // Reading Tools Handle Drag — highest priority
             if (readingDragTarget) {
                 handleReadingDrag(e.clientY);
+                return;
+            }
+
+            // Magnifier Lens follows the pointer (doesn't block panning below)
+            if (lensActive && document.body.classList.contains('video-active')) {
+                moveLensTo(e.clientX, e.clientY);
+            }
+
+            // Annotation stroke / eraser drag in progress
+            if (_annotLive || _annotErasing) {
+                annotPointerMove(e.clientX, e.clientY);
                 return;
             }
 
@@ -11552,15 +12165,17 @@
             }
         });
 
-        window.addEventListener('mouseup', () => { 
-            if (isDragging || readingDragTarget) savePrefs(); 
-            isDragging = false; 
+        window.addEventListener('mouseup', () => {
+            annotPointerUp(); // commits a live stroke / ends an eraser drag (no-op otherwise)
+            if (isDragging || readingDragTarget) savePrefs();
+            isDragging = false;
             readingDragTarget = null;
             transformLayer.classList.remove('fast-tracking');
         });
-        window.addEventListener('blur', () => { 
+        window.addEventListener('blur', () => {
+            annotPointerUp();
             if (isDragging || readingDragTarget) savePrefs();
-            isDragging = false; 
+            isDragging = false;
             readingDragTarget = null;
             transformLayer.classList.remove('fast-tracking');
             // Release all held pan keys so nothing stays "stuck" after focus loss
@@ -11625,16 +12240,21 @@
             e.preventDefault();
 
             if (e.ctrlKey || e.metaKey) {
-                // Pinch-to-zoom: instant, no momentum
+                // Pinch-to-zoom: instant, no momentum — anchored at the cursor position
                 stopMomentum();
                 transformLayer.classList.add('fast-tracking');
-                setScale(state.streamScale - (e.deltaY * CONSTANTS.PINCH_SENSITIVITY));
+                setScale(state.streamScale - (e.deltaY * CONSTANTS.PINCH_SENSITIVITY), e.clientX, e.clientY);
                 // Restore easing after zoom input settles
                 clearTimeout(wheelTimeout);
                 wheelTimeout = setTimeout(() => {
                     transformLayer.classList.remove('fast-tracking');
                     savePrefs();
                 }, 150);
+            } else if (lensActive) {
+                // Magnifier Lens active: plain scroll adjusts the lens magnification.
+                // (Panning the base view is a no-op at 1×, which is the usual lens setup;
+                // ctrl+wheel above still zooms the base view as everywhere else.)
+                adjustLensZoom(-e.deltaY);
             } else {
                 // 2-finger trackpad swipe: apply delta and accumulate velocity for momentum
                 stopMomentum();
@@ -11651,6 +12271,31 @@
             }
         }, { passive: false });
 
+        // --- Double-tap / double-click zoom ---
+        // Toggles between fit (1×) and the configured target level, anchored at the
+        // tapped point. One-handed and motor-friendly: no pinch dexterity required.
+        function handleDoubleTapZoom(clientX, clientY) {
+            if (!state.dblClickZoom) return;
+            if (!document.body.classList.contains('video-active')) return;
+            if (lensActive) return; // lens owns the pointer position while active
+            if (annotActive) return; // taps are ink (dots) while drawing
+            stopMomentum();
+            triggerSnapEasing();
+            if (state.streamScale > 1.05) {
+                setScale(1); // back to fit — pan clamps to 0 automatically
+            } else {
+                setScale(state.dblClickZoomLevel || 3, clientX, clientY);
+            }
+            savePrefs();
+        }
+
+        workspace.addEventListener('dblclick', (e) => {
+            if (e.target.closest('button, input, kbd, a, .dropdown, #tts-click-overlay, ' +
+                '.reading-guide, .reading-mask, .mask-handle-top, .mask-handle-bottom, .mask-gap-hitbox, ' +
+                '#minimap, #tts-bar')) return;
+            handleDoubleTapZoom(e.clientX, e.clientY);
+        });
+
         // --- Touch (Touchscreen) ---
         // 1-finger drag  → pan with momentum on lift
         // 2-finger pinch → zoom (no momentum)
@@ -11661,6 +12306,12 @@
         // Track last two touch positions to seed momentum on touchend
         let lastTouchX = 0, lastTouchY = 0;
         let prevTouchX = 0, prevTouchY = 0;
+        // Pinch midpoint tracking — the zoom anchors here, and moving both fingers pans
+        let lastPinchMidX = 0, lastPinchMidY = 0;
+        // Manual double-tap detector (touch browsers don't reliably fire dblclick here)
+        let lastTapTime = 0, lastTapX = 0, lastTapY = 0;
+        // True while a touch is dragging the magnifier lens (started inside the lens box)
+        let lensTouchDrag = false;
 
         // --- Block Safari swipe-back / swipe-forward / pull-to-refresh on entire document ---
         // Safari ignores overscroll-behavior for its history gestures unless we also
@@ -11735,6 +12386,20 @@
                     }
                 }
 
+                // Magnifier Lens: a touch starting inside the lens box drags the lens
+                // instead of panning the view (mouse users just move the cursor).
+                if (lensActive && isPointInLens(e.touches[0].clientX, e.touches[0].clientY)) {
+                    lensTouchDrag = true;
+                    moveLensTo(e.touches[0].clientX, e.touches[0].clientY);
+                    return;
+                }
+
+                // Annotation mode: one finger draws/erases (two fingers still pinch-zoom)
+                if (annotActive) {
+                    annotPointerDown(e.touches[0].clientX, e.touches[0].clientY);
+                    return;
+                }
+
                 isDragging = true;
                 transformLayer.classList.add('fast-tracking');
                 startClientX = e.touches[0].clientX;
@@ -11744,8 +12409,11 @@
                 startPanX = state.panX;
                 startPanY = state.panY;
             } else if (e.touches.length === 2) {
-                // Transition from 1-finger to 2-finger: cancel drag, start pinch
+                // Transition from 1-finger to 2-finger: cancel drag, start pinch.
+                // A half-drawn stroke is discarded (palm / deliberate pinch, not ink).
+                annotTouchInterrupt();
                 isDragging = false;
+                lensTouchDrag = false;
                 stopMomentum();
                 transformLayer.classList.add('fast-tracking');
                 initialPinchDistance = Math.hypot(
@@ -11753,6 +12421,8 @@
                     e.touches[0].clientY - e.touches[1].clientY
                 );
                 initialScale = state.streamScale; // FIX: was incorrectly state.scale
+                lastPinchMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                lastPinchMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
             }
         }, { passive: false });
 
@@ -11762,6 +12432,16 @@
 
             if (e.touches.length === 1 && readingDragTarget) {
                 handleReadingDrag(e.touches[0].clientY);
+                return;
+            }
+
+            if (e.touches.length === 1 && lensTouchDrag) {
+                moveLensTo(e.touches[0].clientX, e.touches[0].clientY);
+                return;
+            }
+
+            if (e.touches.length === 1 && (_annotLive || _annotErasing)) {
+                annotPointerMove(e.touches[0].clientX, e.touches[0].clientY);
                 return;
             }
 
@@ -11782,7 +12462,16 @@
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
                 );
-                setScale(initialScale * (currentDistance / initialPinchDistance));
+                const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                // Moving both fingers together pans (standard map/photo gesture)…
+                state.panX += midX - lastPinchMidX;
+                state.panY += midY - lastPinchMidY;
+                lastPinchMidX = midX;
+                lastPinchMidY = midY;
+                // …and the zoom anchors at the live pinch midpoint, so the content
+                // between the fingers stays between the fingers.
+                setScale(initialScale * (currentDistance / initialPinchDistance), midX, midY);
             }
         }, { passive: false });
 
@@ -11792,11 +12481,45 @@
             }
 
             if (e.touches.length === 0) {
+                if (_annotLive || _annotErasing) {
+                    annotPointerUp();
+                    return;
+                }
+
+                if (lensTouchDrag) {
+                    lensTouchDrag = false;
+                    return;
+                }
+
                 if (readingDragTarget) {
                     savePrefs();
                     readingDragTarget = null;
                     transformLayer.classList.remove('fast-tracking');
                     return;
+                }
+
+                // Manual double-tap detector: two quick taps in roughly the same spot
+                // toggle the zoom at that spot (dblclick is unreliable under our
+                // preventDefault'ed touchmove, so we detect taps ourselves).
+                const ct = e.changedTouches && e.changedTouches[0];
+                if (ct && !e.target.closest('button, input, kbd, a, .dropdown')) {
+                    const moved = Math.hypot(ct.clientX - startClientX, ct.clientY - startClientY);
+                    const now = performance.now();
+                    if (moved < 12) { // a tap, not a drag
+                        if (now - lastTapTime < 350 &&
+                            Math.hypot(ct.clientX - lastTapX, ct.clientY - lastTapY) < 48) {
+                            lastTapTime = 0;
+                            isDragging = false;
+                            transformLayer.classList.remove('fast-tracking');
+                            handleDoubleTapZoom(ct.clientX, ct.clientY);
+                            return;
+                        }
+                        lastTapTime = now;
+                        lastTapX = ct.clientX;
+                        lastTapY = ct.clientY;
+                    } else {
+                        lastTapTime = 0;
+                    }
                 }
 
                 if (isDragging) {
@@ -11818,6 +12541,1158 @@
                 }
             }
         });
+
+        // ================================================================
+        // MAGNIFIER LENS  +  VIEW LOCATOR
+        // ================================================================
+        // Shared frame access: both tools draw the actual frame pixels onto their
+        // own canvases (so they can apply the same theme filter chain — works even
+        // on Safari, where iframe SVG filters don't).
+        //   • Local screen share (live) → draw the <video> element directly (true live).
+        //   • Remote / frozen → decode `latestFrame` (refreshed via snapshot requests).
+        // Shared mutable flags are declared near the top of the script (TDZ safety);
+        // all functions here are declarations, hoisted across the whole script.
+        // ================================================================
+
+        function _videoActive() {
+            return document.body.classList.contains('video-active');
+        }
+
+        // Current drawable frame source + its pixel dimensions, or null if none yet.
+        function _frameDrawable() {
+            if (isLocalSession && !state.isFrozen) {
+                const lv = document.getElementById('local-video');
+                if (lv && lv.videoWidth) return { src: lv, w: lv.videoWidth, h: lv.videoHeight };
+            }
+            if (latestFrame) {
+                if (_frameImgCache.src !== latestFrame) {
+                    const img = new Image();
+                    _frameImgCache = { src: latestFrame, img, ready: false };
+                    img.onload = () => {
+                        if (_frameImgCache.img === img) {
+                            _frameImgCache.ready = true;
+                            _lensDirty = true;
+                            if (_minimapVisible) drawMinimap();
+                        }
+                    };
+                    img.src = latestFrame;
+                }
+                if (_frameImgCache.ready) {
+                    const img = _frameImgCache.img;
+                    return { src: img, w: img.naturalWidth, h: img.naturalHeight };
+                }
+            }
+            return null;
+        }
+
+        // Screen (client) point → layer-local point (the workspace box at scale 1,
+        // origin top-left). Inverts translate(pan)·scale(s) with centre origin.
+        function _clientToLayer(cx, cy) {
+            const rect = getWorkspaceRect();
+            return {
+                x: (cx - rect.left - rect.width / 2 - state.panX) / state.streamScale + rect.width / 2,
+                y: (cy - rect.top - rect.height / 2 - state.panY) / state.streamScale + rect.height / 2,
+            };
+        }
+
+        // Mirrored drawImage: when the displayed video is flipped, the lens/locator
+        // canvases mirror their pixels the same way so they match what's on screen.
+        function _drawFrameRegion(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh) {
+            ctx.save();
+            const fx = state.flipH ? -1 : 1, fy = state.flipV ? -1 : 1;
+            if (fx === -1 || fy === -1) {
+                ctx.translate(fx === -1 ? dx * 2 + dw : 0, fy === -1 ? dy * 2 + dh : 0);
+                ctx.scale(fx, fy);
+            }
+            try { ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh); } catch (_) {}
+            ctx.restore();
+        }
+
+        // Remote streams need on-demand frames for the lens/locator while live.
+        // One shared feeder; idle when the scan pipeline is already running.
+        function _ensureSnapshotFeed() {
+            if (isLocalSession || SNAPSHOT_API_UNSUPPORTED) return;
+            if (_toolsSnapTimer) return;
+            _toolsSnapTimer = setInterval(() => {
+                if (state.isFrozen || snapshotTimer) return;
+                requestSnapshot();
+            }, SNAPSHOT_INTERVAL_MS);
+            if (!state.isFrozen && !snapshotTimer) setTimeout(requestSnapshot, 80);
+        }
+        function _stopSnapshotFeedIfIdle() {
+            if (!lensActive && !_minimapVisible && _toolsSnapTimer) {
+                clearInterval(_toolsSnapTimer);
+                _toolsSnapTimer = null;
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // MAGNIFIER LENS
+        // ----------------------------------------------------------------
+        const LENS_BASE_W = 460, LENS_BASE_H = 270, LENS_BASE_DIAM = 340;
+        const LENS_ZOOM_MIN = 1.2, LENS_ZOOM_MAX = 8;
+
+        function lensBox() {
+            const f = state.lensSize || 1;
+            if (state.lensShape === 'circle') {
+                const d = Math.round(LENS_BASE_DIAM * f);
+                return { w: d, h: d };
+            }
+            return { w: Math.round(LENS_BASE_W * f), h: Math.round(LENS_BASE_H * f) };
+        }
+
+        function isPointInLens(clientX, clientY) {
+            if (!lensActive) return false;
+            const rect = getWorkspaceRect();
+            const { w, h } = lensBox();
+            return Math.abs(clientX - rect.left - lensX) <= w / 2 + 24 &&
+                   Math.abs(clientY - rect.top  - lensY) <= h / 2 + 24;
+        }
+
+        function moveLensTo(clientX, clientY) {
+            const rect = getWorkspaceRect();
+            lensX = Math.max(0, Math.min(clientX - rect.left, rect.width));
+            lensY = Math.max(0, Math.min(clientY - rect.top, rect.height));
+            _lensDirty = true;
+        }
+
+        function moveLensBy(dx, dy) {
+            const rect = getWorkspaceRect();
+            lensX = Math.max(0, Math.min(lensX + dx, rect.width));
+            lensY = Math.max(0, Math.min(lensY + dy, rect.height));
+            _lensDirty = true;
+        }
+
+        function adjustLensZoom(delta) {
+            const z = Math.max(LENS_ZOOM_MIN, Math.min(LENS_ZOOM_MAX,
+                (state.lensZoom || 2) * (1 + delta * 0.0015)));
+            state.lensZoom = Math.round(z * 100) / 100;
+            showStatus(`Lens Zoom: ${Math.round(state.lensZoom * 100)}%`);
+            const slider = document.getElementById('lens-zoom-slider');
+            if (slider) slider.value = state.lensZoom;
+            const lbl = document.getElementById('lens-zoom-val');
+            if (lbl) lbl.textContent = state.lensZoom.toFixed(1) + '×';
+            _lensDirty = true;
+            savePrefs();
+        }
+
+        function toggleLens(announce = true) {
+            const el = document.getElementById('lens');
+            if (!el) return;
+            if (!lensActive) {
+                if (!_videoActive()) { showStatus('Magnifier Lens needs an active video'); return; }
+                if (!isLocalSession && SNAPSHOT_API_UNSUPPORTED) {
+                    // Remote frame capture is Chromium-only (same limit as OCR) — see DEVLOG
+                    showStatus('Lens needs Chrome or Edge for remote streams — or use Screen Share', true);
+                    return;
+                }
+                lensActive = true;
+                const rect = getWorkspaceRect();
+                lensX = rect.width / 2;
+                lensY = rect.height / 2;
+                el.classList.toggle('circle', state.lensShape === 'circle');
+                el.style.display = 'block';
+                document.body.classList.add('lens-active');
+                _lensDirty = true;
+                _startLensLoop();
+                _ensureSnapshotFeed();
+                if (announce) showStatus('Lens On (G) — scroll wheel adjusts lens zoom');
+            } else {
+                lensActive = false;
+                el.style.display = 'none';
+                document.body.classList.remove('lens-active');
+                _stopLensLoop();
+                _stopSnapshotFeedIfIdle();
+                if (announce) showStatus('Lens Off');
+            }
+            syncAllIndicators();
+        }
+
+        function _startLensLoop() {
+            if (!_lensRaf) _lensRaf = requestAnimationFrame(_lensTick);
+        }
+        function _stopLensLoop() {
+            if (_lensRaf) { cancelAnimationFrame(_lensRaf); _lensRaf = null; }
+        }
+        function _lensTick() {
+            _lensRaf = null;
+            if (!lensActive) return;
+            // Local live video changes continuously → redraw every frame;
+            // otherwise only when something moved or a new frame decoded.
+            if ((isLocalSession && !state.isFrozen) || _lensDirty) {
+                _drawLens();
+                _lensDirty = false;
+            }
+            _lensRaf = requestAnimationFrame(_lensTick);
+        }
+
+        function _drawLens() {
+            if (!_videoActive()) return;
+            const el = document.getElementById('lens');
+            const canvas = document.getElementById('lens-canvas');
+            if (!el || !canvas) return;
+            const rect = getWorkspaceRect();
+            const { w, h } = lensBox();
+
+            // Position the box (clamped fully on-screen; near edges the lens stops
+            // following so the cursor can still reach the very edge)
+            el.style.width = w + 'px';
+            el.style.height = h + 'px';
+            el.style.left = Math.max(0, Math.min(lensX - w / 2, rect.width - w)) + 'px';
+            el.style.top  = Math.max(0, Math.min(lensY - h / 2, rect.height - h)) + 'px';
+
+            const fsrc = _frameDrawable();
+            el.classList.toggle('no-frame', !fsrc);
+
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+            if (canvas.width !== pw || canvas.height !== ph) {
+                canvas.width = pw;
+                canvas.height = ph;
+            }
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, w, h);
+            if (!fsrc) return;
+
+            // Match the themed main view: same CSS filter chain on the canvas
+            canvas.style.filter = _currentWrapperFilter || 'none';
+
+            const lb = computeLetterbox(fsrc.w, fsrc.h, rect.width, rect.height);
+            // Content under the lens centre, in layer coords
+            const c = _clientToLayer(rect.left + lensX, rect.top + lensY);
+            // On-screen magnification inside the lens = base zoom × lens factor,
+            // so the lens behaves like a glass over whatever is displayed.
+            const mag = state.streamScale * (state.lensZoom || 2);
+            const layerW = w / mag, layerH = h / mag;
+            const k = fsrc.w / lb.vidW; // layer px → frame px (uniform scale)
+            let sx = (c.x - layerW / 2 - lb.vidLeft) * k;
+            let sy = (c.y - layerH / 2 - lb.vidTop) * k;
+            const sw = layerW * k, sh = layerH * k;
+            // The displayed view is mirrored when flipped — mirror the source rect,
+            // then _drawFrameRegion mirrors the pixels back so they match the screen.
+            if (state.flipH) sx = fsrc.w - sx - sw;
+            if (state.flipV) sy = fsrc.h - sy - sh;
+            _drawFrameRegion(ctx, fsrc.src, sx, sy, sw, sh, 0, 0, w, h);
+
+            // Annotations inside the lens — drawn on a separate, unfiltered overlay
+            // canvas so the theme chain never recolours the ink (matches main view).
+            _renderLensAnnotations(w, h, c, layerW, layerH, lb, dpr);
+        }
+
+        // ----------------------------------------------------------------
+        // VIEW LOCATOR (MINIMAP)
+        // ----------------------------------------------------------------
+        const MINIMAP_MIN_W = 120, MINIMAP_MAX_W = 520;
+
+        function setMinimapMode(mode, announce = false) {
+            if (!['off', 'zoomed', 'always'].includes(mode)) mode = 'zoomed';
+            state.minimapMode = mode;
+            if (mode !== 'off') _minimapLastOnMode = mode;
+            document.querySelectorAll('input[name="minimap-mode"]').forEach(r => {
+                r.checked = r.value === mode;
+            });
+            _syncModeCards('minimap-mode');
+            syncAllIndicators();
+            updateMinimapVisibility();
+            if (announce) {
+                showStatus(mode === 'off' ? 'View Locator Off'
+                    : mode === 'always' ? 'View Locator: Always Shown'
+                    : 'View Locator: Shown While Zoomed');
+            }
+            savePrefs();
+        }
+
+        function toggleMinimap() {
+            if (state.minimapMode === 'off') {
+                const mode = _minimapLastOnMode || 'zoomed';
+                setMinimapMode(mode, false);
+                showStatus(mode === 'zoomed' && state.streamScale <= 1.01
+                    ? 'View Locator On — appears when you zoom in'
+                    : 'View Locator On');
+            } else {
+                setMinimapMode('off', false);
+                showStatus('View Locator Off');
+            }
+        }
+
+        function updateMinimapVisibility() {
+            const box = document.getElementById('minimap');
+            if (!box) return;
+            const show = _videoActive() && state.minimapMode !== 'off' &&
+                         (state.minimapMode === 'always' || state.streamScale > 1.01);
+            if (show === _minimapVisible) {
+                if (show) updateMinimapViewRect(); // track pan/zoom while visible
+                return;
+            }
+            _minimapVisible = show;
+            box.style.display = show ? 'block' : 'none';
+            if (show) {
+                drawMinimap();
+                applyMinimapPosition();
+                if (!_minimapTimer) _minimapTimer = setInterval(_minimapRefreshTick, 2000);
+                _ensureSnapshotFeed();
+            } else {
+                if (_minimapTimer) { clearInterval(_minimapTimer); _minimapTimer = null; }
+                _stopSnapshotFeedIfIdle();
+            }
+        }
+
+        function _minimapRefreshTick() {
+            if (!_minimapVisible) return;
+            drawMinimap(); // local video / fresh snapshots make this live-ish
+        }
+
+        function drawMinimap() {
+            if (!_minimapVisible) return;
+            const canvas = document.getElementById('minimap-canvas');
+            if (!canvas) return;
+            const fsrc = _frameDrawable();
+            if (fsrc) _minimapAR = fsrc.w / fsrc.h;
+            const w = Math.max(MINIMAP_MIN_W, Math.min(state.minimapW || 220, MINIMAP_MAX_W));
+            const h = Math.round(w / _minimapAR);
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+            const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+            if (canvas.width !== pw || canvas.height !== ph) {
+                canvas.width = pw;
+                canvas.height = ph;
+            }
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, w, h);
+            if (fsrc) {
+                canvas.style.filter = _currentWrapperFilter || 'none';
+                _drawFrameRegion(ctx, fsrc.src, 0, 0, fsrc.w, fsrc.h, 0, 0, w, h);
+            }
+            updateMinimapViewRect();
+        }
+
+        // Gold rectangle marking which part of the frame is currently visible
+        function updateMinimapViewRect() {
+            if (!_minimapVisible) return;
+            const rEl = document.getElementById('minimap-viewrect');
+            const canvas = document.getElementById('minimap-canvas');
+            if (!rEl || !canvas) return;
+            const rect = getWorkspaceRect();
+            const cw = parseFloat(canvas.style.width) || canvas.width;
+            const ch = parseFloat(canvas.style.height) || canvas.height;
+            // Visible workspace corners → layer coords → fractions of the video box
+            const tl = _clientToLayer(rect.left, rect.top);
+            const br = _clientToLayer(rect.left + rect.width, rect.top + rect.height);
+            const lb = computeLetterbox(_minimapAR, 1, rect.width, rect.height);
+            const clamp01 = v => Math.max(0, Math.min(1, v));
+            const fx0 = clamp01((tl.x - lb.vidLeft) / lb.vidW);
+            const fx1 = clamp01((br.x - lb.vidLeft) / lb.vidW);
+            const fy0 = clamp01((tl.y - lb.vidTop) / lb.vidH);
+            const fy1 = clamp01((br.y - lb.vidTop) / lb.vidH);
+            rEl.style.left   = (fx0 * cw) + 'px';
+            rEl.style.top    = (fy0 * ch) + 'px';
+            rEl.style.width  = Math.max(6, (fx1 - fx0) * cw) + 'px';
+            rEl.style.height = Math.max(6, (fy1 - fy0) * ch) + 'px';
+        }
+
+        // Click / drag inside the map → centre the view on that point
+        function _minimapJump(clientX, clientY) {
+            const canvas = document.getElementById('minimap-canvas');
+            if (!canvas) return;
+            const crect = canvas.getBoundingClientRect();
+            const fx = Math.max(0, Math.min(1, (clientX - crect.left) / crect.width));
+            const fy = Math.max(0, Math.min(1, (clientY - crect.top) / crect.height));
+            const rect = getWorkspaceRect();
+            const lb = computeLetterbox(_minimapAR, 1, rect.width, rect.height);
+            const lx = lb.vidLeft + fx * lb.vidW;
+            const ly = lb.vidTop  + fy * lb.vidH;
+            // screen-centre = pan + s·(l − W/2)  ⇒  pan = −s·(l − W/2) centres l
+            state.panX = -state.streamScale * (lx - rect.width / 2);
+            state.panY = -state.streamScale * (ly - rect.height / 2);
+            updateVisuals(); // clamps pan + refreshes the view rectangle
+        }
+
+        // Free position (hand-dragged) or the default CSS corner
+        function applyMinimapPosition() {
+            const box = document.getElementById('minimap');
+            if (!box) return;
+            if (typeof state.minimapFreeX === 'number' && typeof state.minimapFreeY === 'number') {
+                const rect = getWorkspaceRect();
+                const bw = box.offsetWidth || 200, bh = box.offsetHeight || 130;
+                const x = Math.max(4, Math.min(state.minimapFreeX, rect.width - bw - 4));
+                const y = Math.max(4, Math.min(state.minimapFreeY, rect.height - bh - 4));
+                box.style.left = x + 'px';
+                box.style.top = y + 'px';
+                box.style.right = 'auto';
+                box.style.bottom = 'auto';
+            } else {
+                box.style.left = '';
+                box.style.top = '';
+                box.style.right = '';
+                box.style.bottom = '';
+            }
+        }
+
+        // Called when leaving video mode — stop loops, hide overlays
+        function deactivateViewTools() {
+            if (lensActive) toggleLens(false);
+            if (annotActive) toggleAnnotate(false);
+            clearTimeout(_annotSaveTimer);
+            annotSaveNow(); // flush notes for the session that just ended
+            const ac = document.getElementById('annot-canvas');
+            if (ac) ac.style.display = 'none';
+            _minimapVisible = false;
+            const mm = document.getElementById('minimap');
+            if (mm) mm.style.display = 'none';
+            if (_minimapTimer) { clearInterval(_minimapTimer); _minimapTimer = null; }
+            if (_toolsSnapTimer) { clearInterval(_toolsSnapTimer); _toolsSnapTimer = null; }
+        }
+
+        // --- View Locator interactions: jump, move panel, resize panel ---
+        (function initMinimapInteractions() {
+            const box    = document.getElementById('minimap');
+            const canvas = document.getElementById('minimap-canvas');
+            const grip   = document.getElementById('minimap-grip');
+            const resize = document.getElementById('minimap-resize');
+            if (!box || !canvas || !grip || !resize) return;
+
+            // Convert the docked CSS corner into an explicit free position (needed
+            // before any drag/resize so left/top become the anchored properties).
+            function ensureFreePosition() {
+                if (typeof state.minimapFreeX === 'number') return;
+                const bRect = box.getBoundingClientRect();
+                const rect = getWorkspaceRect();
+                state.minimapFreeX = bRect.left - rect.left;
+                state.minimapFreeY = bRect.top - rect.top;
+            }
+
+            // Map surface: click or drag to move the view
+            let mapDown = false;
+            canvas.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                mapDown = true;
+                try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+                _minimapJump(e.clientX, e.clientY);
+            });
+            canvas.addEventListener('pointermove', (e) => {
+                if (mapDown) _minimapJump(e.clientX, e.clientY);
+            });
+            const endMap = () => { if (mapDown) { mapDown = false; savePrefs(); } };
+            canvas.addEventListener('pointerup', endMap);
+            canvas.addEventListener('pointercancel', endMap);
+
+            // Grip: drag to move the panel; double-click docks back to the corner
+            let gripDrag = null;
+            grip.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const bRect = box.getBoundingClientRect();
+                gripDrag = { dx: e.clientX - bRect.left, dy: e.clientY - bRect.top };
+                box.classList.add('minimap-dragging');
+                try { grip.setPointerCapture(e.pointerId); } catch (_) {}
+            });
+            grip.addEventListener('pointermove', (e) => {
+                if (!gripDrag) return;
+                const rect = getWorkspaceRect();
+                state.minimapFreeX = e.clientX - rect.left - gripDrag.dx;
+                state.minimapFreeY = e.clientY - rect.top - gripDrag.dy;
+                applyMinimapPosition();
+            });
+            const endGrip = () => {
+                if (!gripDrag) return;
+                gripDrag = null;
+                box.classList.remove('minimap-dragging');
+                savePrefs();
+            };
+            grip.addEventListener('pointerup', endGrip);
+            grip.addEventListener('pointercancel', endGrip);
+            grip.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                state.minimapFreeX = null;
+                state.minimapFreeY = null;
+                applyMinimapPosition();
+                savePrefs();
+                showStatus('View Locator docked to corner');
+            });
+            grip.addEventListener('keydown', (e) => {
+                let dx = 0, dy = 0;
+                const step = e.shiftKey ? 32 : 10;
+                if (e.key === 'ArrowUp') dy = -step;
+                else if (e.key === 'ArrowDown') dy = step;
+                else if (e.key === 'ArrowLeft') dx = -step;
+                else if (e.key === 'ArrowRight') dx = step;
+                else if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault(); e.stopPropagation();
+                    state.minimapFreeX = null; state.minimapFreeY = null;
+                    applyMinimapPosition(); savePrefs();
+                    showStatus('View Locator docked to corner');
+                    return;
+                } else return;
+                e.preventDefault();
+                e.stopPropagation();
+                ensureFreePosition();
+                state.minimapFreeX += dx;
+                state.minimapFreeY += dy;
+                applyMinimapPosition();
+                savePrefs();
+            });
+
+            // Resize: drag the corner handle (width 120–520 px, height follows aspect)
+            let resizeDrag = null;
+            resize.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                ensureFreePosition(); // anchor top-left so the corner tracks the pointer
+                resizeDrag = { startX: e.clientX, startW: state.minimapW || 220 };
+                box.classList.add('minimap-dragging');
+                try { resize.setPointerCapture(e.pointerId); } catch (_) {}
+            });
+            resize.addEventListener('pointermove', (e) => {
+                if (!resizeDrag) return;
+                state.minimapW = Math.round(Math.max(MINIMAP_MIN_W, Math.min(MINIMAP_MAX_W,
+                    resizeDrag.startW + (e.clientX - resizeDrag.startX))));
+                drawMinimap();
+                applyMinimapPosition();
+            });
+            const endResize = () => {
+                if (!resizeDrag) return;
+                resizeDrag = null;
+                box.classList.remove('minimap-dragging');
+                savePrefs();
+            };
+            resize.addEventListener('pointerup', endResize);
+            resize.addEventListener('pointercancel', endResize);
+            resize.addEventListener('keydown', (e) => {
+                let d = 0;
+                if (e.key === 'ArrowRight' || e.key === 'ArrowUp') d = 16;
+                else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') d = -16;
+                else return;
+                e.preventDefault();
+                e.stopPropagation();
+                state.minimapW = Math.round(Math.max(MINIMAP_MIN_W, Math.min(MINIMAP_MAX_W,
+                    (state.minimapW || 220) + d)));
+                drawMinimap();
+                applyMinimapPosition();
+                savePrefs();
+            });
+        })();
+
+        window.addEventListener('resize', () => {
+            if (_minimapVisible) { drawMinimap(); applyMinimapPosition(); }
+            if (lensActive) _lensDirty = true;
+        });
+
+        // ================================================================
+        // ANNOTATIONS (NOTES) — pens/highlighters anchored to the content
+        // ================================================================
+        // Strokes are VECTORS in video-fraction coordinates (0..1 of the displayed
+        // video box), re-rendered into a viewport canvas on every view change — so
+        // ink anchors to the content through zoom/pan/window-resize and stays crisp
+        // at any magnification. Autosaved per session URL (rejoining the same
+        // stream restores your notes); export/import as a file; PNG export
+        // composites the frame + ink at native frame resolution.
+        // ================================================================
+        const ANNOT_LS_KEY = 'vdoMagnifierNotes';
+        const ANNOT_SIZES = { s: 0.0022, m: 0.0045, l: 0.009 }; // stroke width as fraction of video width
+        const ANNOT_HL_MULT = 3;      // highlighter width multiplier
+        const ANNOT_HL_ALPHA = 0.4;   // highlighter translucency
+        const ANNOT_MAX_SESSIONS = 10;
+        let _annotSaveUrl = null;     // session the pending autosave belongs to
+        let _annotLastClient = null;  // last pointer position (px) for move filtering
+
+        // Current content aspect ratio — live video, else last decoded frame, else 16:9
+        function _contentAR() {
+            const lv = document.getElementById('local-video');
+            if (lv && lv.videoWidth) return lv.videoWidth / lv.videoHeight;
+            if (_frameImgCache.ready && _frameImgCache.img) {
+                return _frameImgCache.img.naturalWidth / _frameImgCache.img.naturalHeight;
+            }
+            return _minimapAR || 16 / 9;
+        }
+
+        // Screen point → video-fraction coordinates (can exceed 0..1 in letterbox bars)
+        function _annotFracFromClient(cx, cy) {
+            const rect = getWorkspaceRect();
+            const l = _clientToLayer(cx, cy);
+            const lb = computeLetterbox(_contentAR(), 1, rect.width, rect.height);
+            return {
+                x: (l.x - lb.vidLeft) / lb.vidW,
+                y: (l.y - lb.vidTop) / lb.vidH,
+            };
+        }
+
+        // Shared stroke renderer over an affine frac→canvas mapping:
+        // canvasX = Ax + fx·Bx, canvasY = Ay + fy·By. Used by the main overlay,
+        // the lens overlay, and the PNG export.
+        function _renderStrokesTo(ctx, Ax, Bx, Ay, By, strokes, live) {
+            const all = live ? strokes.concat([live]) : strokes;
+            for (const s of all) {
+                const pts = s.pts;
+                if (!pts || !pts.length) continue;
+                ctx.save();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = s.color;
+                ctx.globalAlpha = s.tool === 'hl' ? ANNOT_HL_ALPHA : 1;
+                ctx.lineWidth = Math.max(0.75, s.w * Bx);
+                ctx.beginPath();
+                ctx.moveTo(Ax + pts[0].x * Bx, Ay + pts[0].y * By);
+                if (pts.length === 1) {
+                    // a tap = a dot (zero-length lines don't render round caps everywhere)
+                    ctx.lineTo(Ax + pts[0].x * Bx + 0.01, Ay + pts[0].y * By);
+                } else if (pts.length === 2) {
+                    ctx.lineTo(Ax + pts[1].x * Bx, Ay + pts[1].y * By);
+                } else {
+                    // quadratic midpoint smoothing — cheap, looks hand-drawn
+                    for (let i = 1; i < pts.length - 1; i++) {
+                        const a = pts[i], b = pts[i + 1];
+                        ctx.quadraticCurveTo(
+                            Ax + a.x * Bx, Ay + a.y * By,
+                            Ax + (a.x + b.x) / 2 * Bx, Ay + (a.y + b.y) / 2 * By);
+                    }
+                    const last = pts[pts.length - 1];
+                    ctx.lineTo(Ax + last.x * Bx, Ay + last.y * By);
+                }
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        // Main viewport overlay — re-rendered on every view change (early-out when empty)
+        function renderAnnotations() {
+            const canvas = document.getElementById('annot-canvas');
+            if (!canvas) return;
+            if ((!annotStrokes.length && !_annotLive) || !_videoActive()) {
+                if (canvas.style.display !== 'none') canvas.style.display = 'none';
+                return;
+            }
+            canvas.style.display = 'block';
+            const rect = getWorkspaceRect();
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            const pw = Math.round(rect.width * dpr), ph = Math.round(rect.height * dpr);
+            if (canvas.width !== pw || canvas.height !== ph) {
+                canvas.width = pw;
+                canvas.height = ph;
+                canvas.style.width = rect.width + 'px';
+                canvas.style.height = rect.height + 'px';
+            }
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, rect.width, rect.height);
+            const s = state.streamScale;
+            const lb = computeLetterbox(_contentAR(), 1, rect.width, rect.height);
+            const Bx = lb.vidW * s, By = lb.vidH * s;
+            const Ax = (lb.vidLeft - rect.width / 2) * s + rect.width / 2 + state.panX;
+            const Ay = (lb.vidTop - rect.height / 2) * s + rect.height / 2 + state.panY;
+            _renderStrokesTo(ctx, Ax, Bx, Ay, By, annotStrokes, _annotLive);
+            if (lensActive) _lensDirty = true; // lens overlay mirrors the ink
+        }
+
+        function _annotScheduleRender() {
+            if (_annotRaf) return;
+            _annotRaf = requestAnimationFrame(() => {
+                _annotRaf = null;
+                renderAnnotations();
+            });
+        }
+
+        // Lens overlay (called from _drawLens with its geometry)
+        function _renderLensAnnotations(w, h, c, layerW, layerH, lb, dpr) {
+            const canvas = document.getElementById('lens-annot');
+            if (!canvas) return;
+            const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+            if (canvas.width !== pw || canvas.height !== ph) {
+                canvas.width = pw;
+                canvas.height = ph;
+            }
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, w, h);
+            if (!annotStrokes.length && !_annotLive) return;
+            const mag = w / layerW; // = streamScale × lensZoom
+            const Bx = lb.vidW * mag, By = lb.vidH * mag;
+            const Ax = (lb.vidLeft - (c.x - layerW / 2)) * mag;
+            const Ay = (lb.vidTop - (c.y - layerH / 2)) * mag;
+            _renderStrokesTo(ctx, Ax, Bx, Ay, By, annotStrokes, _annotLive);
+        }
+
+        // --- Drawing input (wired from the workspace mouse/touch handlers) ---
+        function annotPointerDown(cx, cy) {
+            if (!_videoActive()) return;
+            _annotLastClient = { x: cx, y: cy };
+            if (state.annotTool === 'eraser') {
+                _annotErasing = true;
+                _annotEraseBatch = [];
+                _annotEraseAt(cx, cy);
+                return;
+            }
+            let w = ANNOT_SIZES[state.annotSize] || ANNOT_SIZES.m;
+            if (state.annotTool === 'hl') w *= ANNOT_HL_MULT;
+            _annotLive = {
+                tool: state.annotTool,
+                color: state.annotColor,
+                w: +w.toFixed(5),
+                pts: [_annotFracFromClient(cx, cy)],
+            };
+            _annotScheduleRender();
+        }
+
+        function annotPointerMove(cx, cy) {
+            // skip sub-2px jitter — keeps strokes small and smooth
+            if (_annotLastClient && Math.hypot(cx - _annotLastClient.x, cy - _annotLastClient.y) < 2) return;
+            _annotLastClient = { x: cx, y: cy };
+            if (_annotErasing) {
+                _annotEraseAt(cx, cy);
+                return;
+            }
+            if (_annotLive) {
+                _annotLive.pts.push(_annotFracFromClient(cx, cy));
+                _annotScheduleRender();
+            }
+        }
+
+        function annotPointerUp() {
+            if (_annotErasing) {
+                if (_annotEraseBatch && _annotEraseBatch.length) {
+                    annotUndoStack.push({ type: 'erase', items: _annotEraseBatch });
+                    annotScheduleSave();
+                }
+                _annotErasing = false;
+                _annotEraseBatch = null;
+                return;
+            }
+            if (!_annotLive) return;
+            const stroke = _annotLive;
+            _annotLive = null;
+            // quantize to 4 decimals — keeps autosave payloads small
+            stroke.pts = stroke.pts.map(p => ({
+                x: Math.round(p.x * 1e4) / 1e4,
+                y: Math.round(p.y * 1e4) / 1e4,
+            }));
+            annotStrokes.push(stroke);
+            annotUndoStack.push({ type: 'draw', stroke });
+            renderAnnotations();
+            annotScheduleSave();
+        }
+
+        // 1-finger → 2-finger transition: a half-drawn stroke was a palm/pinch, not ink
+        function annotTouchInterrupt() {
+            if (_annotLive) {
+                _annotLive = null;
+                _annotScheduleRender();
+            }
+            if (_annotErasing) annotPointerUp();
+        }
+
+        // Stroke-level eraser: removes any stroke within ~12 screen px of the pointer
+        function _annotEraseAt(cx, cy) {
+            if (!annotStrokes.length) return;
+            const rect = getWorkspaceRect();
+            const lb = computeLetterbox(_contentAR(), 1, rect.width, rect.height);
+            const p = _annotFracFromClient(cx, cy);
+            // work in layer px so x/y distances are comparable
+            const px = p.x * lb.vidW, py = p.y * lb.vidH;
+            const hitR = 12 / state.streamScale; // 12 screen px in layer px
+            let removed = false;
+            for (let i = annotStrokes.length - 1; i >= 0; i--) {
+                const s = annotStrokes[i];
+                const r = hitR + (s.w * lb.vidW) / 2;
+                if (_strokeHit(s, px, py, r, lb)) {
+                    _annotEraseBatch.push({ idx: i, stroke: s });
+                    annotStrokes.splice(i, 1);
+                    removed = true;
+                }
+            }
+            if (removed) _annotScheduleRender();
+        }
+
+        function _strokeHit(s, px, py, r, lb) {
+            const r2 = r * r;
+            const pts = s.pts;
+            if (pts.length === 1) {
+                const dx = pts[0].x * lb.vidW - px, dy = pts[0].y * lb.vidH - py;
+                return dx * dx + dy * dy <= r2;
+            }
+            for (let i = 0; i < pts.length - 1; i++) {
+                const ax = pts[i].x * lb.vidW,     ay = pts[i].y * lb.vidH;
+                const bx = pts[i + 1].x * lb.vidW, by = pts[i + 1].y * lb.vidH;
+                const abx = bx - ax, aby = by - ay;
+                const len2 = abx * abx + aby * aby;
+                let t = len2 ? ((px - ax) * abx + (py - ay) * aby) / len2 : 0;
+                t = Math.max(0, Math.min(1, t));
+                const dx = ax + t * abx - px, dy = ay + t * aby - py;
+                if (dx * dx + dy * dy <= r2) return true;
+            }
+            return false;
+        }
+
+        // --- Undo / clear ---
+        function annotUndo() {
+            const op = annotUndoStack.pop();
+            if (!op) { showStatus('Nothing to undo'); return; }
+            if (op.type === 'draw') {
+                const i = annotStrokes.lastIndexOf(op.stroke);
+                if (i >= 0) annotStrokes.splice(i, 1);
+            } else if (op.type === 'erase') {
+                // restore at original indices, ascending so positions stay valid
+                op.items.slice().sort((a, b) => a.idx - b.idx).forEach(it => {
+                    annotStrokes.splice(Math.min(it.idx, annotStrokes.length), 0, it.stroke);
+                });
+            } else if (op.type === 'clear' || op.type === 'import') {
+                annotStrokes = op.prev;
+            }
+            renderAnnotations();
+            annotScheduleSave();
+            showStatus('Undo');
+        }
+
+        function annotClear() {
+            if (!annotStrokes.length) { showStatus('No notes to clear'); return; }
+            annotUndoStack.push({ type: 'clear', prev: annotStrokes });
+            annotStrokes = [];
+            renderAnnotations();
+            annotScheduleSave();
+            showStatus('Notes cleared — Z undoes');
+        }
+
+        // --- Mode toggle + tool bar ---
+        function toggleAnnotate(announce = true) {
+            if (!annotActive && !_videoActive()) {
+                showStatus('Notes need an active video');
+                return;
+            }
+            annotActive = !annotActive;
+            const bar = document.getElementById('annot-bar');
+            if (bar) bar.classList.toggle('open', annotActive);
+            document.body.classList.toggle('annot-active', annotActive);
+            if (annotActive) {
+                _annotSyncBar();
+                if (announce) showStatus('Notes On — draw on the video · Z undo · N done');
+            } else {
+                annotPointerUp(); // commit anything in flight
+                if (announce && annotStrokes.length) showStatus('Notes Off — your notes stay visible');
+                else if (announce) showStatus('Notes Off');
+            }
+            syncAllIndicators();
+        }
+
+        // Reflect tool/color/size prefs into the bar's pressed states
+        function _annotSyncBar() {
+            const tools = { 'annot-tool-pen': 'pen', 'annot-tool-hl': 'hl', 'annot-tool-eraser': 'eraser' };
+            Object.entries(tools).forEach(([id, tool]) => {
+                const b = document.getElementById(id);
+                if (!b) return;
+                const on = state.annotTool === tool;
+                b.classList.toggle('annot-on', on);
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+            document.querySelectorAll('.annot-color').forEach(b => {
+                const on = b.dataset.color.toLowerCase() === (state.annotColor || '').toLowerCase();
+                b.classList.toggle('annot-on', on);
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+            ['s', 'm', 'l'].forEach(sz => {
+                const b = document.getElementById('annot-size-' + sz);
+                if (!b) return;
+                const on = (state.annotSize || 'm') === sz;
+                b.classList.toggle('annot-on', on);
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+        }
+
+        (function initAnnotBar() {
+            const bar = document.getElementById('annot-bar');
+            if (!bar) return;
+            const setTool = (tool) => { state.annotTool = tool; _annotSyncBar(); savePrefs(); };
+            document.getElementById('annot-tool-pen')?.addEventListener('click', () => setTool('pen'));
+            document.getElementById('annot-tool-hl')?.addEventListener('click', () => setTool('hl'));
+            document.getElementById('annot-tool-eraser')?.addEventListener('click', () => setTool('eraser'));
+            document.querySelectorAll('.annot-color').forEach(b => {
+                b.addEventListener('click', () => {
+                    state.annotColor = b.dataset.color;
+                    // picking a color while erasing means "I want to draw again"
+                    if (state.annotTool === 'eraser') state.annotTool = 'pen';
+                    _annotSyncBar();
+                    savePrefs();
+                });
+            });
+            ['s', 'm', 'l'].forEach(sz => {
+                document.getElementById('annot-size-' + sz)?.addEventListener('click', () => {
+                    state.annotSize = sz;
+                    _annotSyncBar();
+                    savePrefs();
+                });
+            });
+            document.getElementById('annot-undo')?.addEventListener('click', annotUndo);
+            document.getElementById('annot-clear')?.addEventListener('click', annotClear);
+            document.getElementById('annot-close')?.addEventListener('click', () => toggleAnnotate());
+            // Save / load dropdown
+            const saveBtn = document.getElementById('annot-save-btn');
+            const saveMenu = document.getElementById('annot-save-menu');
+            if (saveBtn && saveMenu) {
+                saveBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const open = !saveMenu.classList.contains('show');
+                    closeAllDropdowns();
+                    saveMenu.classList.toggle('show', open);
+                    saveBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+                });
+                document.addEventListener('click', (e) => {
+                    if (!saveMenu.contains(e.target) && e.target !== saveBtn && !saveBtn.contains(e.target)) {
+                        saveMenu.classList.remove('show');
+                        saveBtn.setAttribute('aria-expanded', 'false');
+                    }
+                });
+            }
+            const closeSaveMenu = () => {
+                saveMenu?.classList.remove('show');
+                saveBtn?.setAttribute('aria-expanded', 'false');
+            };
+            document.getElementById('annot-export-png')?.addEventListener('click', () => { closeSaveMenu(); annotExportPng(); });
+            document.getElementById('annot-export-json')?.addEventListener('click', () => { closeSaveMenu(); annotExportJson(); });
+            document.getElementById('annot-import-json')?.addEventListener('click', () => {
+                closeSaveMenu();
+                document.getElementById('annot-file-input')?.click();
+            });
+            document.getElementById('annot-file-input')?.addEventListener('change', (e) => {
+                const file = e.target.files && e.target.files[0];
+                e.target.value = '';
+                if (file) annotImportFile(file);
+            });
+        })();
+
+        // --- Persistence: autosave per session URL ---
+        function annotScheduleSave() {
+            _annotSaveUrl = state.lastSessionUrl || _annotRestoredFor;
+            clearTimeout(_annotSaveTimer);
+            _annotSaveTimer = setTimeout(annotSaveNow, 800);
+        }
+
+        function annotSaveNow() {
+            if (storageFailed || state.noMemory) return;
+            const url = _annotSaveUrl || _annotRestoredFor;
+            if (!url) return;
+            try {
+                const all = JSON.parse(localStorage.getItem(ANNOT_LS_KEY) || '{}');
+                if (annotStrokes.length) {
+                    all[url] = {
+                        savedAt: new Date().toISOString(),
+                        ar: +_contentAR().toFixed(4),
+                        strokes: annotStrokes,
+                    };
+                } else {
+                    delete all[url];
+                }
+                const keys = Object.keys(all);
+                if (keys.length > ANNOT_MAX_SESSIONS) {
+                    keys.sort((a, b) => (all[a].savedAt || '').localeCompare(all[b].savedAt || ''));
+                    keys.slice(0, keys.length - ANNOT_MAX_SESSIONS).forEach(k => delete all[k]);
+                }
+                localStorage.setItem(ANNOT_LS_KEY, JSON.stringify(all));
+            } catch (e) { /* quota / private mode — notes just won't persist */ }
+        }
+
+        // On entering video mode: flush the previous session's notes, load this one's
+        function annotOnVideoStart() {
+            clearTimeout(_annotSaveTimer);
+            annotSaveNow();
+            const url = state.lastSessionUrl;
+            annotStrokes = [];
+            annotUndoStack = [];
+            _annotLive = null;
+            _annotRestoredFor = url;
+            _annotSaveUrl = url;
+            if (!storageFailed && !state.noMemory) {
+                try {
+                    const all = JSON.parse(localStorage.getItem(ANNOT_LS_KEY) || '{}');
+                    const saved = url && all[url];
+                    if (saved && Array.isArray(saved.strokes) && saved.strokes.length) {
+                        annotStrokes = saved.strokes;
+                        const when = saved.savedAt ? new Date(saved.savedAt).toLocaleDateString() : '';
+                        showStatus(`Restored your notes${when ? ' from ' + when : ''} — press N to draw`);
+                    }
+                } catch (e) {}
+            }
+            renderAnnotations();
+        }
+
+        // --- Export / import ---
+        function _annotStamp() {
+            const d = new Date();
+            const p = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+        }
+
+        // PNG: the current frame (as displayed, incl. flip) + ink, at native frame size
+        function annotExportPng() {
+            const fsrc = _frameDrawable();
+            const ar = _contentAR();
+            const fw = fsrc ? fsrc.w : 1920;
+            const fh = fsrc ? fsrc.h : Math.round(1920 / ar);
+            const c = document.createElement('canvas');
+            c.width = fw;
+            c.height = fh;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, fw, fh);
+            if (fsrc) _drawFrameRegion(ctx, fsrc.src, 0, 0, fw, fh, 0, 0, fw, fh);
+            _renderStrokesTo(ctx, 0, fw, 0, fh, annotStrokes, null);
+            const a = document.createElement('a');
+            a.download = `vdo-notes-${_annotStamp()}.png`;
+            a.href = c.toDataURL('image/png');
+            a.click();
+            showStatus(fsrc ? 'Picture saved (frame + notes)' : 'Picture saved (notes only — no frame yet)');
+        }
+
+        function annotExportJson() {
+            if (!annotStrokes.length) { showStatus('No notes to save yet'); return; }
+            const payload = {
+                _vdoMagnifierNotes: true,
+                exportedAt: new Date().toISOString(),
+                sessionUrl: state.lastSessionUrl || '',
+                ar: +_contentAR().toFixed(4),
+                strokes: annotStrokes,
+            };
+            const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.download = `vdo-notes-${_annotStamp()}.json`;
+            a.href = URL.createObjectURL(blob);
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+            showStatus('Notes saved to file');
+        }
+
+        function annotImportFile(file) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const payload = JSON.parse(reader.result);
+                    if (payload._vdoMagnifierNotes !== true || !Array.isArray(payload.strokes)) {
+                        throw new Error('not a notes file');
+                    }
+                    const clean = payload.strokes.map(s => ({
+                        tool: s.tool === 'hl' ? 'hl' : 'pen',
+                        color: /^#[0-9a-f]{6}$/i.test(s.color) ? s.color : '#ff3b30',
+                        w: Math.min(0.05, Math.max(0.0005, +s.w || ANNOT_SIZES.m)),
+                        pts: (Array.isArray(s.pts) ? s.pts : [])
+                            .filter(p => p && isFinite(p.x) && isFinite(p.y))
+                            .map(p => ({ x: +p.x, y: +p.y })),
+                    })).filter(s => s.pts.length);
+                    annotUndoStack.push({ type: 'import', prev: annotStrokes });
+                    annotStrokes = clean;
+                    renderAnnotations();
+                    annotScheduleSave();
+                    showStatus(`Loaded ${clean.length} note${clean.length !== 1 ? 's' : ''} — Z undoes`);
+                } catch (e) {
+                    showStatus('Could not read that notes file', true);
+                }
+            };
+            reader.onerror = () => showStatus('Could not read that notes file', true);
+            reader.readAsText(file);
+        }
+
+        // ----------------------------------------------------------------
+        // ZOOM & LENS SETTINGS TAB — restore + wire controls
+        // ----------------------------------------------------------------
+        // Mode-cards hide their radio input and show selection via the `mode-active`
+        // class (same pattern as the Appearance + Menubar groups) — keep it synced.
+        function _syncModeCards(groupName) {
+            document.querySelectorAll(`input[name="${groupName}"]`).forEach(r => {
+                r.closest('.mode-card')?.classList.toggle('mode-active', r.checked);
+            });
+        }
+
+        function initZoomSettingsUI() {
+            const stepSel = document.getElementById('zoom-step-select');
+            if (stepSel) {
+                const want = state.zoomStepPref ? String(state.zoomStepPref) : 'auto';
+                stepSel.value = want;
+                if (stepSel.value !== want) stepSel.value = 'auto'; // unknown saved value
+                stepSel.addEventListener('change', () => {
+                    state.zoomStepPref = stepSel.value === 'auto' ? null : parseFloat(stepSel.value);
+                    showStatus(state.zoomStepPref
+                        ? `Zoom step: ${Math.round(state.zoomStepPref * 100)}%`
+                        : 'Zoom step: Adaptive');
+                    savePrefs();
+                });
+            }
+            const anchor = document.getElementById('zoom-anchor-toggle');
+            if (anchor) {
+                anchor.checked = state.zoomAnchorPointer !== false;
+                anchor.addEventListener('change', () => {
+                    state.zoomAnchorPointer = anchor.checked;
+                    savePrefs();
+                });
+            }
+            const dbl = document.getElementById('dbl-zoom-toggle');
+            const dblLevel = document.getElementById('dbl-zoom-level');
+            if (dbl) {
+                dbl.checked = state.dblClickZoom !== false;
+                dbl.addEventListener('change', () => {
+                    state.dblClickZoom = dbl.checked;
+                    if (dblLevel) dblLevel.disabled = !dbl.checked;
+                    savePrefs();
+                });
+            }
+            if (dblLevel) {
+                dblLevel.value = String(state.dblClickZoomLevel || 3);
+                if (!dblLevel.value) dblLevel.value = '3';
+                dblLevel.disabled = !(state.dblClickZoom !== false);
+                dblLevel.addEventListener('change', () => {
+                    state.dblClickZoomLevel = parseFloat(dblLevel.value) || 3;
+                    savePrefs();
+                });
+            }
+            document.querySelectorAll('input[name="minimap-mode"]').forEach(r => {
+                r.checked = r.value === state.minimapMode;
+                r.addEventListener('change', () => {
+                    if (r.checked) setMinimapMode(r.value, true);
+                    _syncModeCards('minimap-mode');
+                });
+            });
+            _syncModeCards('minimap-mode');
+            document.querySelectorAll('input[name="lens-shape"]').forEach(r => {
+                r.checked = r.value === (state.lensShape || 'rect');
+                r.addEventListener('change', () => {
+                    if (!r.checked) return;
+                    state.lensShape = r.value;
+                    const el = document.getElementById('lens');
+                    if (el) el.classList.toggle('circle', state.lensShape === 'circle');
+                    _lensDirty = true;
+                    _syncModeCards('lens-shape');
+                    savePrefs();
+                    showStatus(state.lensShape === 'circle' ? 'Lens: Circle' : 'Lens: Rectangle');
+                });
+            });
+            _syncModeCards('lens-shape');
+            const lz = document.getElementById('lens-zoom-slider');
+            const lzv = document.getElementById('lens-zoom-val');
+            if (lz) {
+                lz.value = state.lensZoom || 2;
+                if (lzv) lzv.textContent = (state.lensZoom || 2).toFixed(1) + '×';
+                lz.addEventListener('input', () => {
+                    state.lensZoom = parseFloat(lz.value);
+                    if (lzv) lzv.textContent = state.lensZoom.toFixed(1) + '×';
+                    _lensDirty = true;
+                    savePrefs();
+                });
+            }
+            const ls = document.getElementById('lens-size-slider');
+            const lsv = document.getElementById('lens-size-val');
+            if (ls) {
+                ls.value = state.lensSize || 1;
+                if (lsv) lsv.textContent = Math.round((state.lensSize || 1) * 100) + '%';
+                ls.addEventListener('input', () => {
+                    state.lensSize = parseFloat(ls.value);
+                    if (lsv) lsv.textContent = Math.round(state.lensSize * 100) + '%';
+                    _lensDirty = true;
+                    savePrefs();
+                });
+            }
+        }
+        initZoomSettingsUI();
 
     </script>
 </body>
