@@ -282,6 +282,9 @@
             position: absolute;
             background-color: var(--panel-bg);
             min-width: 260px;
+            /* Cap to the viewport so a long item label (font / theme names at large
+               text sizes) can't push the menu off-screen; labels wrap instead. */
+            max-width: min(360px, calc(100vw - 24px));
             box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.8);
             z-index: 70;
             border: 2px solid var(--border-color);
@@ -293,6 +296,9 @@
             max-height: 70vh;
             overflow-y: auto;
         }
+        /* Dropdown items wrap their text (unlike compact toolbar buttons) so long
+           labels stay readable within the capped width rather than clipping. */
+        .dropdown-content button { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 
         .dropdown-content.show {
             display: flex;
@@ -661,8 +667,11 @@
             bottom: 20px;
             left: 20px;
             background: rgba(0, 0, 0, 0.9);
-            color: var(--text-color);
-            border: 2px solid var(--border-color);
+            /* The background is always dark, so text/border are fixed light values rather
+               than theme colours — otherwise a dark-text theme (e.g. Black on White)
+               renders near-black text on this near-black badge and it disappears. */
+            color: #ffffff;
+            border: 2px solid rgba(255, 255, 255, 0.55);
             padding: calc(10px * var(--ui-scale)) calc(18px * var(--ui-scale));
             font-size: calc(17.6px * var(--ui-scale)); /* 1.1rem base, px so text-scale doesn't compound */
             border-radius: 8px;
@@ -1672,8 +1681,13 @@
             align-items: center;
             justify-content: space-between;
             gap: 15px;
+            /* Reflow to multiple lines instead of clipping when the label/control don't
+               fit (large fonts / high text-scale), rather than squeezing the slider away. */
+            flex-wrap: wrap;
         }
-        .adv-setting-row label { min-width: 90px; font-weight: bold; color: var(--text-color); font-size: 0.95rem; }
+        /* min-width keeps a tidy column at normal sizes, but the label may grow and wrap
+           its text rather than overflow the row when space is tight. */
+        .adv-setting-row label { min-width: 90px; font-weight: bold; color: var(--text-color); font-size: 0.95rem; overflow-wrap: anywhere; }
         .adv-setting-row input[type="range"] { flex-grow: 1; cursor: pointer; }
         .adv-setting-row input[type="number"] {
             width: 70px; padding: 4px;
@@ -3620,6 +3634,9 @@
              resize it, and click/drag inside the map to move the magnified view. -->
         <div id="minimap" role="group" aria-label="View locator map">
             <canvas id="minimap-canvas" aria-hidden="true"></canvas>
+            <!-- Ink overlay: annotations on the locator, unfiltered by the theme chain.
+                 pointer-events:none so click-to-jump on the map keeps working. -->
+            <canvas id="minimap-annot" aria-hidden="true" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas>
             <div id="minimap-viewrect" aria-hidden="true"></div>
             <button type="button" id="minimap-grip"
                     aria-label="Move the view locator panel. Drag with the mouse, use arrow keys to nudge, or double-click to dock it back to the corner."
@@ -3638,30 +3655,47 @@
              Outside #transform-layer so the theme filter never recolours the ink. -->
         <canvas id="annot-canvas" aria-hidden="true"></canvas>
 
-        <!-- Annotation tool bar — shown while annotate mode (N) is on -->
-        <div id="annot-bar" role="toolbar" aria-label="Annotation tools — draw on the video; notes stay anchored to the content as you zoom and pan">
-            <button type="button" class="annot-btn" id="annot-tool-pen" aria-label="Pen" aria-pressed="true" title="Pen">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19l7-7 3 3-7 7-3-3z"></path><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path><path d="M2 2l7.586 7.586"></path><circle cx="11" cy="11" r="2"></circle></svg>
-            </button>
-            <button type="button" class="annot-btn" id="annot-tool-hl" aria-label="Highlighter" aria-pressed="false" title="Highlighter">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l-6 6v3h9l3-3"></path><path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"></path></svg>
-            </button>
-            <button type="button" class="annot-btn" id="annot-tool-eraser" aria-label="Eraser — drag over a stroke to remove it" aria-pressed="false" title="Eraser (removes whole strokes)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20H7L3 16a2 2 0 0 1 0-3L13 3a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-9 9"></path><path d="M6 11l7 7"></path></svg>
-            </button>
+        <!-- Annotation tool bar — shown while annotate mode (N) is on.
+             Keyboard: ONE tab stop (roving tabindex), Arrow keys move between
+             controls, Home/End jump, Escape leaves drawing mode. Tools, colors
+             and sizes are radiogroups so AT announces "Red, radio, 1 of 18". -->
+        <div id="annot-bar" role="toolbar" aria-label="Annotation tools — draw on the video; notes stay anchored to the content as you zoom and pan. Use the arrow keys to move between tools.">
+            <div class="annot-group" role="radiogroup" aria-label="Drawing tool">
+                <button type="button" class="annot-btn" id="annot-tool-pen" role="radio" aria-label="Pen" aria-checked="true" title="Pen">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19l7-7 3 3-7 7-3-3z"></path><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path><path d="M2 2l7.586 7.586"></path><circle cx="11" cy="11" r="2"></circle></svg>
+                </button>
+                <button type="button" class="annot-btn" id="annot-tool-hl" role="radio" aria-label="Highlighter" aria-checked="false" title="Highlighter">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l-6 6v3h9l3-3"></path><path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"></path></svg>
+                </button>
+                <button type="button" class="annot-btn" id="annot-tool-text" role="radio" aria-label="Text label — click the video to type a note there" aria-checked="false" title="Text label">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
+                </button>
+                <button type="button" class="annot-btn" id="annot-tool-arrow" role="radio" aria-label="Arrow — drag from tail to tip" aria-checked="false" title="Arrow">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="19" x2="19" y2="5"></line><polyline points="9 5 19 5 19 15"></polyline></svg>
+                </button>
+                <button type="button" class="annot-btn" id="annot-tool-line" role="radio" aria-label="Straight line" aria-checked="false" title="Straight line">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="19" x2="19" y2="5"></line></svg>
+                </button>
+                <button type="button" class="annot-btn" id="annot-tool-rect" role="radio" aria-label="Rectangle outline" aria-checked="false" title="Rectangle">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1"></rect></svg>
+                </button>
+                <button type="button" class="annot-btn" id="annot-tool-ellipse" role="radio" aria-label="Circle or ellipse outline" aria-checked="false" title="Circle / ellipse">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="12" rx="8" ry="6"></ellipse></svg>
+                </button>
+                <button type="button" class="annot-btn" id="annot-tool-eraser" role="radio" aria-label="Eraser — drag over a note to remove it" aria-checked="false" title="Eraser (removes whole strokes)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20H7L3 16a2 2 0 0 1 0-3L13 3a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-9 9"></path><path d="M6 11l7 7"></path></svg>
+                </button>
+            </div>
             <span class="annot-sep" aria-hidden="true"></span>
-            <button type="button" class="annot-color" data-color="#ff3b30" style="background:#ff3b30" aria-label="Red ink" aria-pressed="true" title="Red"></button>
-            <button type="button" class="annot-color" data-color="#ff9500" style="background:#ff9500" aria-label="Orange ink" aria-pressed="false" title="Orange"></button>
-            <button type="button" class="annot-color" data-color="#ffd60a" style="background:#ffd60a" aria-label="Yellow ink" aria-pressed="false" title="Yellow"></button>
-            <button type="button" class="annot-color" data-color="#34c759" style="background:#34c759" aria-label="Green ink" aria-pressed="false" title="Green"></button>
-            <button type="button" class="annot-color" data-color="#0a84ff" style="background:#0a84ff" aria-label="Blue ink" aria-pressed="false" title="Blue"></button>
-            <button type="button" class="annot-color" data-color="#bf5af2" style="background:#bf5af2" aria-label="Purple ink" aria-pressed="false" title="Purple"></button>
-            <button type="button" class="annot-color" data-color="#000000" style="background:#000000" aria-label="Black ink" aria-pressed="false" title="Black"></button>
-            <button type="button" class="annot-color" data-color="#ffffff" style="background:#ffffff" aria-label="White ink" aria-pressed="false" title="White"></button>
+            <!-- 18 named swatches injected from ANNOT_COLORS — each announces its
+                 color NAME (e.g. "Sky Blue"), never a hex code -->
+            <div class="annot-group" id="annot-colors" role="radiogroup" aria-label="Ink color"></div>
             <span class="annot-sep" aria-hidden="true"></span>
-            <button type="button" class="annot-btn annot-size" id="annot-size-s" aria-label="Thin stroke" aria-pressed="false" title="Thin"><span aria-hidden="true"></span></button>
-            <button type="button" class="annot-btn annot-size" id="annot-size-m" aria-label="Medium stroke" aria-pressed="true" title="Medium"><span aria-hidden="true"></span></button>
-            <button type="button" class="annot-btn annot-size" id="annot-size-l" aria-label="Thick stroke" aria-pressed="false" title="Thick"><span aria-hidden="true"></span></button>
+            <div class="annot-group" role="radiogroup" aria-label="Stroke size">
+                <button type="button" class="annot-btn annot-size" id="annot-size-s" role="radio" aria-label="Thin stroke, small text" aria-checked="false" title="Thin"><span aria-hidden="true"></span></button>
+                <button type="button" class="annot-btn annot-size" id="annot-size-m" role="radio" aria-label="Medium stroke, medium text" aria-checked="true" title="Medium"><span aria-hidden="true"></span></button>
+                <button type="button" class="annot-btn annot-size" id="annot-size-l" role="radio" aria-label="Thick stroke, large text" aria-checked="false" title="Thick"><span aria-hidden="true"></span></button>
+            </div>
             <span class="annot-sep" aria-hidden="true"></span>
             <button type="button" class="annot-btn" id="annot-undo" aria-label="Undo last annotation (Z)" title="Undo (Z)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-15-6.7L3 13"></path></svg>
@@ -3685,6 +3719,10 @@
             </button>
         </div>
         <input type="file" id="annot-file-input" accept="application/json,.json" style="display:none" aria-hidden="true">
+        <!-- Text-label entry — appears at the clicked spot; Enter places, Escape cancels -->
+        <input type="text" id="annot-text-input" maxlength="300" autocomplete="off" spellcheck="false"
+               aria-label="Type your note text. Press Enter to place it on the video, or Escape to cancel."
+               style="display:none">
 
         <!-- Connecting indicator — shown while VDO.ninja WebRTC handshake is in progress -->
         <div id="connecting-indicator" role="status" aria-live="polite" aria-label="Connecting">
@@ -3859,6 +3897,7 @@
         // When debug mode is off it's a no-op with negligible overhead.
         const DEBUG_MODE = new URLSearchParams(window.location.search).has('debuglog');
         const debugLog = [];   // [ { t, key, value }, ... ]
+        const DEBUG_LOG_CAP = 5000;   // ring-buffer cap so a long debug session can't grow it unbounded
 
         // System dark-mode media query — used by Natural Colors "System" mode.
         // Stored once so we can add/remove a single listener.
@@ -3905,6 +3944,9 @@
             if (!DEBUG_MODE) return;
             const entry = { t: Date.now(), key, value };
             debugLog.push(entry);
+            // Bound the buffer — drop oldest entries past the cap so a marathon debug
+            // session can't grow the array without limit.
+            if (debugLog.length > DEBUG_LOG_CAP) debugLog.splice(0, debugLog.length - DEBUG_LOG_CAP);
             // Also echo to the browser console so DevTools shows it in real-time
             console.log('[VDOMag]', key, value);
         }
@@ -4137,6 +4179,15 @@
             syncAllIndicators();
             _updateFontPickerActive();
             savePrefs();
+            // A font swap can resize the toolbar → workspace, shifting the OCR overlay
+            // geometry (and, in viewport region mode, the captured crop region). If a
+            // frozen scan is on screen — or one is mid-flight — re-scan against the new
+            // metrics so word/dim/click boxes don't drift. scheduleFrozenRescan() is
+            // debounced and routes through clearTtsState(), which also discards any
+            // in-flight pass via the OCR cancellation token.
+            if (state.isFrozen && state.isTtsEnabled && (ocrWords.length || state.isOcrRunning)) {
+                scheduleFrozenRescan();
+            }
         }
 
         // Cycle through FONT_REGISTRY in order, wrapping back to default.
@@ -4338,10 +4389,12 @@
 
         // ── Font Browser modal (opened by the "Browse all fonts…" button) ──
         let _fontBrowserOpener = null;
+        let _fontBrowserParent = null;
         function openFontBrowser() {
             const modal = document.getElementById('font-browser-modal');
             if (!modal) return;
             _fontBrowserOpener = document.activeElement;
+            _fontBrowserParent = suppressUnderlyingModal(modal);  // inert the modal we stack over
             modal.classList.add('active');
             modal.setAttribute('aria-hidden', 'false');
             const input = document.getElementById('fb-search');
@@ -4354,12 +4407,28 @@
             if (!modal) return;
             modal.classList.remove('active');
             modal.setAttribute('aria-hidden', 'true');
+            restoreSuppressedModal(_fontBrowserParent);   // un-inert before returning focus to it
+            _fontBrowserParent = null;
             if (_fontBrowserOpener && typeof _fontBrowserOpener.focus === 'function') _fontBrowserOpener.focus();
             _fontBrowserOpener = null;
         }
 
         // ── Advanced text spacing ──────────────────────────────────────────
         function _fmt2(n) { return (Math.round(n * 100) / 100).toFixed(2); }
+        // Coalesce rapid calls (e.g. a slider drag) to at most one per animation frame.
+        // Layout-affecting CSS-variable writes are the expensive part — funnelling the
+        // drag through rAF means one reflow per frame instead of one per input tick.
+        // Latest arguments within the frame win.
+        function rafCoalesce(fn) {
+            let scheduled = false, lastArgs = null;
+            return function(...args) {
+                lastArgs = args;
+                if (scheduled) return;
+                scheduled = true;
+                requestAnimationFrame(() => { scheduled = false; fn.apply(null, lastArgs); });
+            };
+        }
+
         function applyTextSpacing(save = true) {
             const root = document.documentElement.style;
             root.setProperty('--letter-spacing', (state.letterSpacing || 0) + 'em');
@@ -4474,6 +4543,10 @@
             'capslock', 'backspace', 'delete',
             'f1','f2','f3','f4','f5','f6','f7','f8','f9','f10','f11','f12',
             'w','a','s','d',          // WASD pan — hardcoded non-remappable
+            // Arrow keys also drive the held-key pan engine. Without reserving them, a
+            // remap to a bare arrow would be silently shadowed by panning and never fire —
+            // so block them here and surface the standard "can't be reassigned" message.
+            'arrowup','arrowdown','arrowleft','arrowright',
             '0','1','2','3','4','5','6','7','8','9'  // theme selectors
         ]);
 
@@ -4645,8 +4718,8 @@
                     e.preventDefault(); // prevent browser zoom (some browsers fire on bare -)
                     performZoom(-1);
                     break;
-                case 'hover-pan':    document.getElementById('btn-toggle-hover-pan').click(); break;
-                case 'reset-view':   document.getElementById('btn-reset-view').click(); break;
+                case 'hover-pan':    document.getElementById('btn-toggle-hover-pan')?.click(); break;
+                case 'reset-view':   document.getElementById('btn-reset-view')?.click(); break;
                 case 'cycle-theme': {
                     clearTimeout(previewTimeout);
                     const idx = themes.findIndex(t => t.id === state.activeThemeId);
@@ -4654,21 +4727,21 @@
                     else            applyTheme(themes[(idx + 1) % themes.length].id, false);
                     break;
                 }
-                case 'contrast':      document.getElementById('btn-contrast').click(); break;
-                case 'invert':        document.getElementById('btn-invert').click(); break;
-                case 'reading-line':  document.getElementById('btn-reading-line').click(); break;
-                case 'reading-mask':  document.getElementById('btn-reading-mask').click(); break;
+                case 'contrast':      document.getElementById('btn-contrast')?.click(); break;
+                case 'invert':        document.getElementById('btn-invert')?.click(); break;
+                case 'reading-line':  document.getElementById('btn-reading-line')?.click(); break;
+                case 'reading-mask':  document.getElementById('btn-reading-mask')?.click(); break;
                 case 'auto-follow':
                     if (document.body.classList.contains('video-active')) {
                         e.preventDefault();
-                        document.getElementById('btn-reading-auto').click();
+                        document.getElementById('btn-reading-auto')?.click();
                     }
                     break;
-                case 'large-cursor': document.getElementById('btn-toggle-cursor').click(); break;
+                case 'large-cursor': document.getElementById('btn-toggle-cursor')?.click(); break;
                 case 'lens':         toggleLens(); break;
                 case 'view-locator': toggleMinimap(); break;
                 case 'annotate':     toggleAnnotate(); break;
-                case 'freeze':       freezeBtn().click(); break;
+                case 'freeze':       freezeBtn()?.click(); break;
                 case 'fullscreen':   toggleFullscreen(); break;
                 case 'hide-menu':    toggleMenu(); break;
             }
@@ -4796,11 +4869,11 @@
             { id: 'by', name: 'Black on Yellow', bg: '#ffff00', text: '#000000', panel: '#e6e600' },
             { id: 'gb', name: 'Green on Black', bg: '#000000', text: '#00ff00', panel: '#1a1a1a' },
             { id: 'cb', name: 'Cyan on Black', bg: '#000000', text: '#00ffff', panel: '#1a1a1a' },
-            { id: 'ybl', name: 'Yellow on Blue', bg: '#0000aa', text: '#ffff00', panel: '#000088' },
-            { id: 'wbl', name: 'White on Blue', bg: '#0000aa', text: '#ffffff', panel: '#000088' },
+            { id: 'ybl', name: 'Yellow on Blue', bg: '#0000aa', text: '#ffff00', panel: '#000055' },
+            { id: 'wbl', name: 'White on Blue', bg: '#0000aa', text: '#ffffff', panel: '#000055' },
             { id: 'ab', name: 'Amber on Black', bg: '#000000', text: '#ffbf00', panel: '#1a1a1a' },
             { id: 'sd', name: 'Soft Dark Mode', bg: '#1a1a1a', text: '#e0e0e0', panel: '#2a2a2a' },
-            { id: 'rb', name: 'Red on Black', bg: '#000000', text: '#ff0000', panel: '#1a1a1a' },
+            { id: 'rb', name: 'Red on Black', bg: '#000000', text: '#ff5555', panel: '#1a1a1a' },
             { id: 'bp', name: 'Black on Peach', bg: '#ffdab9', text: '#000000', panel: '#e6c4a3' },
             { id: 'bm', name: 'Black on Mint', bg: '#98ff98', text: '#000000', panel: '#85e685' },
             { id: 'bl', name: 'Black on Lt Blue', bg: '#add8e6', text: '#000000', panel: '#9ac2cf' },
@@ -5000,6 +5073,7 @@
 
         let latestFrame = null;
         let snapshotTimer = null;
+        let _snapshotKickoffTimer = null;   // the one-shot 500ms warm-up; tracked so it can be cleared
         let knownStreamID = null;   // populated if VDO.Ninja tells us the streamID
         const freezeOverlay = document.getElementById('freeze-overlay');
         // Focus-Mode dimmer (declared early so updateVisuals can mirror the transform onto it)
@@ -5049,12 +5123,18 @@
 
         function startSnapshotPipeline() {
             stopSnapshotPipeline();
-            setTimeout(requestSnapshot, 500);
+            // Track the warm-up timeout so stopping the pipeline within 500ms can't leave
+            // a stray snapshot request to fire after the pipeline was already torn down.
+            _snapshotKickoffTimer = setTimeout(() => { _snapshotKickoffTimer = null; requestSnapshot(); }, 500);
             snapshotTimer = setInterval(requestSnapshot, SNAPSHOT_INTERVAL_MS);
             dlog('snapshot_pipeline', 'started');
         }
 
         function stopSnapshotPipeline() {
+            if (_snapshotKickoffTimer) {
+                clearTimeout(_snapshotKickoffTimer);
+                _snapshotKickoffTimer = null;
+            }
             if (snapshotTimer) {
                 clearInterval(snapshotTimer);
                 snapshotTimer = null;
@@ -5164,19 +5244,45 @@
         }
 
         // Debounced Save Memory — skipped when noMemory is active or storage has failed
-        let saveTimeout;
-        function savePrefs() {
-            if (storageFailed || state.noMemory) return;
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(() => {
-                try {
-                    localStorage.setItem('vdoMagnifierPrefs', JSON.stringify(state));
-                    localStorage.setItem('vdoMagnifierThemes', JSON.stringify(themes));
-                } catch(e) {
-                    storageFailed = true; // Lockout to prevent spamming errors in Private Browsing
-                }
-            }, CONSTANTS.SAVE_DEBOUNCE_MS);
+        let saveTimeout = null;
+        // True from the moment Settings Import writes the imported values to localStorage
+        // until the page reloads. While set, no save (debounced or unload-flush) may run —
+        // otherwise stale in-memory state would clobber the freshly imported file.
+        let _settingsImporting = false;
+        function _writePrefsNow() {
+            if (storageFailed || state.noMemory || _settingsImporting) return;
+            try {
+                localStorage.setItem('vdoMagnifierPrefs', JSON.stringify(state));
+                localStorage.setItem('vdoMagnifierThemes', JSON.stringify(themes));
+            } catch(e) {
+                storageFailed = true; // Lockout to prevent spamming errors in Private Browsing
+            }
         }
+        function savePrefs() {
+            if (storageFailed || state.noMemory || _settingsImporting) return;
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => { saveTimeout = null; _writePrefsNow(); }, CONSTANTS.SAVE_DEBOUNCE_MS);
+        }
+        // Cancel a queued save without writing — used by Settings Import, which is about
+        // to overwrite state with imported values and must not let a stale debounced
+        // write fire afterwards.
+        function cancelPendingSave() {
+            clearTimeout(saveTimeout);
+            saveTimeout = null;
+        }
+        // Flush a queued save to disk immediately. Wired to pagehide/beforeunload so that
+        // closing the tab within the 500ms debounce window after a toggle doesn't silently
+        // drop the change. No-ops when nothing is pending, so it never writes needlessly.
+        function flushPrefs() {
+            if (saveTimeout === null) return;
+            clearTimeout(saveTimeout);
+            saveTimeout = null;
+            _writePrefsNow();
+        }
+        // pagehide is the reliable "page going away" signal on modern + mobile browsers
+        // (bfcache-safe); beforeunload covers the few cases pagehide misses.
+        window.addEventListener('pagehide', flushPrefs);
+        window.addEventListener('beforeunload', flushPrefs);
 
         // DOM Containers
         const themeContainer = document.getElementById('theme-container');
@@ -5437,6 +5543,32 @@
             return btn;
         }
 
+        // --- Focus preservation across destructive re-renders ---------------
+        // innerHTML='' rebuilds destroy whatever node currently has focus, which
+        // drops a screen-reader's virtual cursor back to <body> and loses the
+        // user's place mid-task. Call this BEFORE the wipe: it records the focused
+        // node (by id, or by a data-* attribute scoped to the area being rebuilt)
+        // and returns a restore() that re-focuses the equivalent fresh node.
+        // No-ops when focus wasn't inside the rebuilt area, so it never steals focus.
+        function preserveFocus(scopeSelector, matchAttr) {
+            const ae = document.activeElement;
+            if (!ae || ae === document.body) return () => {};
+            const scopeEl = (scopeSelector && ae.closest) ? ae.closest(scopeSelector) : null;
+            if (scopeSelector && !scopeEl) return () => {};   // focus was elsewhere
+            const id = ae.id || null;
+            const attrVal = matchAttr ? ae.getAttribute(matchAttr) : null;
+            const scopeId = scopeEl ? scopeEl.id : null;
+            return function restore() {
+                let target = id ? document.getElementById(id) : null;
+                if (!target && matchAttr && attrVal != null) {
+                    const root = scopeId ? document.getElementById(scopeId) : document;
+                    const esc = (window.CSS && CSS.escape) ? CSS.escape(attrVal) : attrVal.replace(/"/g, '\\"');
+                    if (root) target = root.querySelector(`[${matchAttr}="${esc}"]`);
+                }
+                if (target && typeof target.focus === 'function') target.focus();
+            };
+        }
+
         function renderAllThemes() {
             // Always ensure Natural Colors is at position 0, regardless of save state
             const natIdx = themes.findIndex(t => t.id === 'nat');
@@ -5444,6 +5576,13 @@
                 const [nat] = themes.splice(natIdx, 1);
                 themes.unshift(nat);
             }
+
+            // Remember which theme swatch (if any) was focused so a reorder/rebuild
+            // doesn't drop the SR cursor — restored after the rebuild below.
+            const _restoreThemeFocus = preserveFocus(
+                '#theme-container,#extended-theme-container,#toolbar-themes,#theme-dropdown-menu,#extended-themes-menu',
+                'data-theme-id'
+            );
 
             themeContainer.innerHTML = '';
             extendedThemeContainer.innerHTML = '';
@@ -5546,6 +5685,7 @@
 
             updateActiveThemeUI();
             adjustToolbar();
+            _restoreThemeFocus();   // put the SR cursor back on the swatch that was focused
         }
 
         document.getElementById('btn-custom-modal-home').addEventListener('click', (e) => openCustomModal(e));
@@ -5705,8 +5845,14 @@
                 savePrefs();
                 updateActiveThemeUI();
                 renderColors();
-                updateVisuals(); 
+                updateVisuals();
                 showStatus(t.name);
+                // A theme switch is colour-only and doesn't move boxes, but re-render the
+                // persistent OCR overlays so they reflect current geometry after any
+                // theme-driven reflow. Both early-return when no frozen scan is active,
+                // and neither restarts playback (cheap, unlike a rescan).
+                if (typeof updateDimOverlay === 'function') updateDimOverlay();
+                if (typeof updateClickOverlay === 'function') updateClickOverlay();
             } else {
                 renderColors(themeId);
                 updateVisuals(themeId);
@@ -5893,10 +6039,33 @@
 
         let lastFocusedElement = null;
 
+        // --- Nested-modal suppression -------------------------------------------------
+        // When a secondary modal (font browser, toolbar customiser, custom-colour) opens
+        // on top of an already-open modal (typically Advanced Settings), the underlying
+        // one must be made inert + aria-hidden. Otherwise two aria-modal="true" dialogs
+        // are exposed at once and the screen-reader cursor can wander beneath the top one.
+        // Returns the suppressed parent (or null) so the matching close() can restore it.
+        function suppressUnderlyingModal(exceptModal) {
+            const parent = Array.from(document.querySelectorAll('.modal-overlay'))
+                .find(m => m !== exceptModal && m.getAttribute('aria-hidden') !== 'true');
+            if (parent) {
+                parent.setAttribute('aria-hidden', 'true');
+                parent.setAttribute('inert', '');   // no-op on browsers without inert; aria-hidden still helps
+            }
+            return parent || null;
+        }
+        function restoreSuppressedModal(parent) {
+            if (!parent) return;
+            parent.removeAttribute('inert');
+            parent.setAttribute('aria-hidden', 'false');
+        }
+
+        let _customModalParent = null;
         function openCustomModal(e) {
             // Store the triggering element so focus can be restored on close
             lastFocusedElement = (e && e.currentTarget) ? e.currentTarget : document.activeElement;
             closeAllDropdowns();
+            _customModalParent = suppressUnderlyingModal(customModal);
             customModal.style.display = 'flex';
             customModal.removeAttribute('aria-hidden');
             refreshCustomPreview();
@@ -5906,20 +6075,29 @@
         function closeCustomModal() {
             customModal.style.display = 'none';
             customModal.setAttribute('aria-hidden', 'true');
+            restoreSuppressedModal(_customModalParent);
+            _customModalParent = null;
             if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
                 lastFocusedElement.focus();
                 lastFocusedElement = null;
             }
         }
 
-        // Trap focus inside modal
+        // Trap focus inside modal (Escape closes; Tab wraps). getFocusable() skips
+        // disabled / hidden controls so the wrap lands on a real, visible target.
         customModal.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                closeCustomModal();
+                return;
+            }
             if (e.key === 'Tab') {
-                const focusable = customModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                const focusable = getFocusable(customModal);
                 if (focusable.length === 0) return;
                 const first = focusable[0];
                 const last = focusable[focusable.length - 1];
-                
+
                 if (e.shiftKey && document.activeElement === first) {
                     e.preventDefault();
                     last.focus();
@@ -6137,6 +6315,11 @@
         
         let statusTimeout;
         let zoomAnnounceTimeout;
+        // Coalesce a burst of non-zoom status announcements so the screen-reader buffer
+        // isn't flooded (e.g. drag feedback or rapid toggles). First message after an idle
+        // gap announces immediately; subsequent rapid ones debounce to the final state.
+        let _statusAnnounceTimer = null;
+        let _lastStatusAnnounceAt = 0;
 
         // Announces context changes to screen reader users.
         // NVDA/JAWS switch to Forms/Application mode when focus enters role="application"
@@ -6182,7 +6365,19 @@
                 }, 400);
             } else {
                 clearTimeout(zoomAnnounceTimeout);
-                statusDisplay.innerText = text;
+                clearTimeout(_statusAnnounceTimer);
+                const now = (window.performance && performance.now) ? performance.now() : 0;
+                if (now - _lastStatusAnnounceAt > 250) {
+                    // Idle → announce immediately so discrete actions get instant feedback.
+                    statusDisplay.innerText = text;
+                    _lastStatusAnnounceAt = now;
+                } else {
+                    // Mid-burst → coalesce; only the settled final message is announced.
+                    _statusAnnounceTimer = setTimeout(() => {
+                        statusDisplay.innerText = text;
+                        _lastStatusAnnounceAt = (window.performance && performance.now) ? performance.now() : 0;
+                    }, 200);
+                }
             }
         }
 
@@ -6219,7 +6414,7 @@
                 if(freezeBtn()) freezeBtn().disabled = false;
                 if(scanBtn()) scanBtn().disabled = false;
                 if (state.isLargeCursorActive) document.body.classList.add('large-cursor-active');
-                document.getElementById('text-mute').innerText = state.isMuted ? "Unmute Audio" : "Mute Audio";
+                { const tm = document.getElementById('text-mute'); if (tm) tm.innerText = state.isMuted ? "Unmute Audio" : "Mute Audio"; }
                 renderColors();
                 windowHasStartedOnce = true;
                 state.lastSessionUrl = rawUrl;
@@ -6276,8 +6471,8 @@
                 }, { once: true });
 
                 if (state.isLargeCursorActive) document.body.classList.add('large-cursor-active');
-                document.getElementById('text-mute').innerText = state.isMuted ? "Unmute Audio" : "Mute Audio";
-                
+                { const tm = document.getElementById('text-mute'); if (tm) tm.innerText = state.isMuted ? "Unmute Audio" : "Mute Audio"; }
+
                 renderColors();
                 
                 const urlParams = new URLSearchParams(window.location.search);
@@ -6404,6 +6599,10 @@
             const isVideoActive = document.body.classList.contains('video-active');
 
             if (isVideoActive) {
+                // Core layout layers are part of the static HTML and normally always
+                // present; bail rather than throw if any is missing (e.g. invoked very
+                // early, or the markup was edited). Prevents a hard crash on zoom.
+                if (!workspace || !transformLayer || !freezeOverlay) return;
                 if (state.streamScale < 1.0) state.streamScale = 1.0;
 
                 const rect = workspace.getBoundingClientRect();
@@ -6621,6 +6820,16 @@
             }
         }
 
+        // Debounced aria announcement for held-key mask nudging. The mask still moves on
+        // every key auto-repeat (good for keyboard users), but the verbose aria-valuetext
+        // is announced once the movement settles — otherwise a held arrow floods the
+        // screen-reader buffer with hundreds of value updates per second.
+        let _maskAriaTimer = null;
+        function scheduleMaskAria() {
+            clearTimeout(_maskAriaTimer);
+            _maskAriaTimer = setTimeout(() => { _maskAriaTimer = null; updateMaskAria(); }, 150);
+        }
+
         function nudgeMaskEdge(which, e) {
             if (state.readingMode !== 'mask') return;
             const H = window.innerHeight || workspace.clientHeight || 800;
@@ -6648,7 +6857,7 @@
             handleReadingDrag(edge); // reuses the same clamp + applyReadingPosition + savePrefs
             readingDragTarget = prevTarget;
             syncAllIndicators();
-            updateMaskAria();
+            scheduleMaskAria();   // debounced so a held arrow doesn't flood the SR buffer
         }
 
         (function wireMaskHandleKeys() {
@@ -6661,6 +6870,7 @@
         // Applies a brief smooth easing for discrete input (zoom buttons only).
         // Arrow key panning now uses its own velocity loop below.
         function triggerSnapEasing() {
+            if (!transformLayer) return;
             clearTimeout(snapTimeout);
             transformLayer.classList.add('smooth-snap');
             snapTimeout = setTimeout(() => transformLayer.classList.remove('smooth-snap'), 300);
@@ -6899,9 +7109,9 @@
                         }
                     }
                     stopSnapshotPipeline();
-                    freezeBtn().classList.add('active-state');
-                    freezeBtn().setAttribute('aria-pressed', 'true');
-                    freezeBtn().setAttribute('aria-label', 'Unfreeze Frame');
+                    freezeBtn()?.classList.add('active-state');
+                    freezeBtn()?.setAttribute('aria-pressed', 'true');
+                    freezeBtn()?.setAttribute('aria-label', 'Unfreeze Frame');
                     document.body.classList.add('is-frozen');
                     syncTtsBarFrozenState();
                     showStatus('Frame Frozen');
@@ -6980,9 +7190,9 @@
                 }, FREEZE_FRAME_TIMEOUT_MS);
 
                 stopSnapshotPipeline();
-                freezeBtn().classList.add('active-state');
-                freezeBtn().setAttribute('aria-pressed', 'true');
-                freezeBtn().setAttribute('aria-label', 'Unfreeze Frame');
+                freezeBtn()?.classList.add('active-state');
+                freezeBtn()?.setAttribute('aria-pressed', 'true');
+                freezeBtn()?.setAttribute('aria-label', 'Unfreeze Frame');
                 document.body.classList.add('is-frozen');
                 syncTtsBarFrozenState();
                 showStatus("Frame Frozen");
@@ -7002,9 +7212,9 @@
                 freezeOverlay.classList.remove('active');
                 if (state.isScanActive) startSnapshotPipeline();
                 dlog('freeze', { state: 'unfrozen', scanActive: state.isScanActive });
-                freezeBtn().classList.remove('active-state');
-                freezeBtn().setAttribute('aria-pressed', 'false');
-                freezeBtn().setAttribute('aria-label', 'Freeze Frame');
+                freezeBtn()?.classList.remove('active-state');
+                freezeBtn()?.setAttribute('aria-pressed', 'false');
+                freezeBtn()?.setAttribute('aria-label', 'Freeze Frame');
                 document.body.classList.remove('is-frozen');
                 syncTtsBarFrozenState();
                 if (typeof updateClickOverlay === 'function') updateClickOverlay();
@@ -7561,6 +7771,10 @@
         // ----------------------------------------------------------------
         function renderToolbarFromConfig() {
             ensureMenubarConfig();
+            // Preserve focus across the rebuild: toolbar buttons keep their stable ids,
+            // theme swatches match by data-theme-id. Without this a customise/resize that
+            // re-renders the toolbar drops the SR cursor to <body>.
+            const _restoreToolbarFocus = preserveFocus('#toolbar', 'data-theme-id');
             toolbar.innerHTML = '';
 
             // Separate pinned-bottom items (fullscreen, hide) from regular items
@@ -7639,6 +7853,7 @@
             _tcRewireListeners();
             adjustToolbar();
             syncAllIndicators();
+            _restoreToolbarFocus();   // restore SR focus to the rebuilt button/swatch
         }
 
         // --- Toolbar node factories ---
@@ -8175,9 +8390,11 @@
 
         // ── open / close ────────────────────────────────────────────────
 
+        let _tcParentModal = null;
         function openToolbarCustomizer() {
             ensureMenubarConfig();
             const modal = document.getElementById('toolbar-customize-modal');
+            _tcParentModal = suppressUnderlyingModal(modal);  // inert Advanced Settings beneath
             modal.style.display = 'flex';
             modal.removeAttribute('aria-hidden');
             _tcRenderAll();
@@ -8191,6 +8408,8 @@
             const modal = document.getElementById('toolbar-customize-modal');
             modal.style.display = 'none';
             modal.setAttribute('aria-hidden', 'true');
+            restoreSuppressedModal(_tcParentModal);
+            _tcParentModal = null;
             document.getElementById('btn-open-tc')?.focus();
         }
 
@@ -8257,6 +8476,31 @@
             _tcRenderAddPanel();
         }
 
+        // Keyboard equivalent of drag-to-reorder (the customiser is otherwise mouse-only).
+        // Moves the item identified by `key` by `offset` (-1 earlier / +1 later), persists,
+        // re-renders everything, then restores focus to the moved node inside `focusScope`
+        // (the list or the preview strip) so the SR cursor follows the item. Matches the
+        // Shift+Arrow reorder convention already used by the theme swatches.
+        function _tcMoveItemByKey(key, offset, focusScope) {
+            const cfg = state.menubarConfig;
+            const idx = cfg.findIndex(c => _tcItemKey(c) === key);
+            if (idx < 0) return;
+            const newIdx = idx + offset;
+            if (newIdx < 0 || newIdx >= cfg.length) return;   // already at an edge
+            const [moved] = cfg.splice(idx, 1);
+            cfg.splice(newIdx, 0, moved);
+            savePrefs();
+            renderToolbarFromConfig();
+            renderAllThemes();
+            _tcRenderAll();
+            const def = _tcDefFor(moved.id);
+            const name = def?.label ?? (moved.id === 'separator' ? 'divider' : moved.id);
+            showStatus(`Moved ${name} ${offset < 0 ? 'earlier' : 'later'}`);
+            const esc = (window.CSS && CSS.escape) ? CSS.escape(key) : key;
+            const el = document.querySelector(`${focusScope} [data-key="${esc}"]`);
+            if (el && typeof el.focus === 'function') el.focus();
+        }
+
         // ── LIVE PREVIEW STRIP ────────────────────────────────────────────
         // Chips are draggable. Drop zones: before/after each chip, and onto empty strip.
         // Dragging from the Add panel's cards also targets the strip.
@@ -8291,8 +8535,11 @@
             chip.draggable = true;
             chip.dataset.key = key;
             chip.setAttribute('role', 'button');
-            chip.setAttribute('aria-label', isSep ? 'Divider' : def?.label ?? item.id);
-            chip.setAttribute('title', isSep ? 'Divider — drag to reorder, × to remove' : `${def?.label} — drag to reorder`);
+            chip.setAttribute('tabindex', '0');   // role=button must be keyboard-focusable
+            chip.setAttribute('aria-roledescription', 'sortable item');
+            const _chipName = isSep ? 'Divider' : (def?.label ?? item.id);
+            chip.setAttribute('aria-label', `${_chipName} — Shift+Arrow to reorder, Delete to remove`);
+            chip.setAttribute('title', `${_chipName} — drag or Shift+Arrow to reorder, × / Delete to remove`);
 
             if (isSep) {
                 chip.textContent = '|';
@@ -8359,6 +8606,18 @@
                 } catch(_) {}
             });
 
+            // Keyboard reordering / removal (drag has no keyboard equivalent). The strip
+            // is horizontal, so Left/Right map to earlier/later; Up/Down accepted too.
+            chip.addEventListener('keydown', (e) => {
+                if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowUp')) {
+                    e.preventDefault(); _tcMoveItemByKey(key, -1, '#tc-preview-strip');
+                } else if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowDown')) {
+                    e.preventDefault(); _tcMoveItemByKey(key, +1, '#tc-preview-strip');
+                } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                    e.preventDefault(); _tcRemoveItem(key);
+                }
+            });
+
             return chip;
         }
 
@@ -8403,6 +8662,9 @@
             row.draggable = true;
             row.dataset.key = key;
             row.setAttribute('role', 'listitem');
+            row.setAttribute('tabindex', '0');   // focusable so it can be reordered by keyboard
+            row.setAttribute('aria-roledescription', 'sortable item');
+            row.setAttribute('title', 'Drag or press Shift+Arrow to reorder');
 
             if (isSep) {
                 row.innerHTML = `
@@ -8465,6 +8727,18 @@
                 document.querySelectorAll('.tc-item-row').forEach(r => r.classList.remove('tc-drop-above','tc-drop-below'));
             });
 
+            // Keyboard reordering (Shift+Arrow), matching the theme-swatch convention.
+            // Only when the row itself is focused — never hijack arrows aimed at the
+            // visibility checkbox, stepper or remove button nested inside.
+            row.addEventListener('keydown', (e) => {
+                if (e.target !== row || !e.shiftKey) return;
+                if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+                    e.preventDefault(); _tcMoveItemByKey(key, -1, '#tc-item-list');
+                } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+                    e.preventDefault(); _tcMoveItemByKey(key, +1, '#tc-item-list');
+                }
+            });
+
             return row;
         }
 
@@ -8479,6 +8753,12 @@
         }
 
         function _tcSetupListDnd(list) {
+            // The list element persists across re-renders (only its rows are rebuilt), and
+            // these handlers are anonymous — so without this guard every _tcRenderActiveList()
+            // would stack another full set of drag listeners on it. Wire exactly once; the
+            // closure vars below then live for the lifetime of those listeners.
+            if (list._dndWired) return;
+            list._dndWired = true;
             let dropTarget = null;
             let dropPos    = 'below';
 
@@ -8710,12 +8990,15 @@
             }
 
             // --- Advanced text spacing sliders ---
+            // State updates immediately each tick (latest value), but the layout-affecting
+            // CSS-variable write is coalesced to one reflow per frame during a drag.
+            const _applyTextSpacingRaf = rafCoalesce(() => applyTextSpacing());
             const _wireSpacing = (id, prop, parse) => {
                 const el = document.getElementById(id);
                 if (!el) return;
                 el.addEventListener('input', () => {
                     state[prop] = parse(el.value);
-                    applyTextSpacing();
+                    _applyTextSpacingRaf();
                 });
             };
             _wireSpacing('letter-spacing-slider', 'letterSpacing', parseFloat);
@@ -8734,7 +9017,9 @@
             const sizeResetBtn= document.getElementById('btn-menubar-size-reset');
 
             if (sizeSlider) {
-                sizeSlider.addEventListener('input', () => applyMenubarScale(parseFloat(sizeSlider.value)));
+                // Coalesce drag ticks → one --ui-scale write (and reflow) per frame.
+                const _applyMenubarScaleRaf = rafCoalesce((v) => applyMenubarScale(v));
+                sizeSlider.addEventListener('input', () => _applyMenubarScaleRaf(parseFloat(sizeSlider.value)));
             }
             if (sizeNumEl) {
                 // Commit on Enter or blur; live-update on input with a small debounce
@@ -8775,7 +9060,9 @@
             const txtNumEl    = document.getElementById('text-size-num');
             const txtResetBtn = document.getElementById('btn-text-size-reset');
             if (txtSlider) {
-                txtSlider.addEventListener('input', () => applyTextScale(parseFloat(txtSlider.value)));
+                // Coalesce drag ticks → one --text-scale write (and reflow) per frame.
+                const _applyTextScaleRaf = rafCoalesce((v) => applyTextScale(v));
+                txtSlider.addEventListener('input', () => _applyTextScaleRaf(parseFloat(txtSlider.value)));
             }
             if (txtNumEl) {
                 let txtDebounce;
@@ -8988,6 +9275,12 @@
                         if (!payload._vdoMagnifierExport) {
                             throw new Error('This file doesn\'t look like a VDO Magnifier settings export.');
                         }
+                        // Lock out all saves and drop any queued debounce BEFORE writing the
+                        // imported values. Otherwise a pending 500ms save (or the unload flush
+                        // when reload fires) would serialise the old in-memory state over the
+                        // file we just imported, and the reload would read back stale data.
+                        _settingsImporting = true;
+                        cancelPendingSave();
                         if (payload.prefs && typeof payload.prefs === 'object' && !Array.isArray(payload.prefs)) {
                             localStorage.setItem('vdoMagnifierPrefs', JSON.stringify(payload.prefs));
                         }
@@ -9111,6 +9404,9 @@
             function renderModalShortcuts() {
                 const container = document.getElementById('modal-shortcuts-list');
                 if (!container) return;
+                // Keep the SR cursor on the row being remapped — without this, finishing
+                // a remap rebuilds the list and dumps focus to <body> mid-task.
+                const _restoreRowFocus = preserveFocus('#modal-shortcuts-list', 'data-action');
                 container.innerHTML = '';
 
                 SHORTCUT_GROUPS.forEach(group => {
@@ -9153,6 +9449,7 @@
 
                     container.appendChild(groupEl);
                 });
+                _restoreRowFocus();   // restore SR focus to the rebuilt shortcut row
             }
 
             // Wire modal Reset hotkeys button
@@ -9533,6 +9830,12 @@
         let tesseractLoading  = false;
         let ocrWords          = [];     // [{text,x0,y0,x1,y1}] — empty when Native engine used
         let ocrCropInfo       = null;   // {srcX,srcY,srcW,srcH,ocrW,ocrH,frameW,frameH}
+        // Cancellation token for in-flight OCR. Any event that makes a running scan's
+        // output stale (pan/zoom re-scan, language or engine switch, unfreeze, TTS off,
+        // worker termination) bumps this counter. runOcr() captures the value at start
+        // and discards its result if the counter has moved on by the time it resolves —
+        // otherwise it would write ocrWords and speak text from a viewport already left.
+        let ocrGeneration     = 0;
         let ttsUnits          = [];
         let ttsUnitIndex      = 0;
         let ttsIsPlaying      = false;
@@ -9953,8 +10256,8 @@
 
                     if (state.ttsRegion === 'viewport') {
                         // Overlay dimensions at scale=1 (offsetWidth/Height, not getBCR)
-                        const overlayW = transformLayer.offsetWidth  || workspace.clientWidth;
-                        const overlayH = transformLayer.offsetHeight || workspace.clientHeight;
+                        const overlayW = transformLayer?.offsetWidth  || workspace?.clientWidth;
+                        const overlayH = transformLayer?.offsetHeight || workspace?.clientHeight;
 
                         // Letterbox geometry — reuses the same helper as the highlight pipeline
                         const lb = computeLetterbox(img.naturalWidth, img.naturalHeight, overlayW, overlayH);
@@ -10082,6 +10385,11 @@
                             }
                         }
                         ctx.putImageData(sharp, 0, 0);
+                        // Release the temporary blur canvases' backing stores immediately
+                        // (zeroing the dimensions frees the bitmap) rather than waiting on
+                        // GC — matters under sustained high-zoom snapshot loops.
+                        blurC.width = blurC.height = 0;
+                        blurFull.width = blurFull.height = 0;
                         dlog('ocr_sharpen', { effectiveScale: effectiveScale.toFixed(1) });
                     }
 
@@ -10105,6 +10413,8 @@
                 const onHome = !document.body.classList.contains('video-active');
                 statusText = (onHome && state.isTtsEnabled) ? 'Press ▶ to read page' : 'Ready';
             }
+            // Invalidate any OCR scan still in flight — its result is now stale.
+            ocrGeneration++;
             stopKeepalive();
             stopAudioKeepAlive();
             _stopTtsFollowLerp();
@@ -10143,6 +10453,10 @@
             // sailed past the guard above and started a competing OCR run — two
             // workers racing on the same canvas. Claim here, release on every exit.
             state.isOcrRunning = true;
+            // Snapshot the cancellation token. If it moves while we await recognition
+            // (pan/zoom, language/engine switch, unfreeze, TTS off, worker kill) the
+            // result is stale and must be discarded rather than spoken.
+            const myGen = ocrGeneration;
             if (!latestFrame) {
                 setTtsStatus((!isLocalSession && SNAPSHOT_API_UNSUPPORTED)
                     ? 'Frame capture needs Chrome or Edge for remote streams — or use Screen Share'
@@ -10219,6 +10533,15 @@
 
                 dlog('ocr_done', { engine: engineUsed, chars: text.length, words: words.length });
 
+                // Cancellation check: if the view/engine/language changed (or TTS was
+                // turned off / unfrozen) while we were recognising, this result describes
+                // a viewport the user has already left. Discard it silently — committing
+                // would overwrite ocrWords and speak stale text aloud.
+                if (myGen !== ocrGeneration) {
+                    dlog('ocr_stale', { discardedGen: myGen, currentGen: ocrGeneration });
+                    return;
+                }
+
                 if (!text) {
                     setTtsStatus('No text detected');
                     updateTtsControls();
@@ -10236,10 +10559,18 @@
                 speakUnit(0);
 
             } catch(err) {
-                setTtsStatus('OCR failed — see console');
-                console.error('[VDOMag OCR]', err);
-                dlog('ocr_error', err?.message ?? String(err));
-                updateTtsControls();
+                // If the run was cancelled mid-recognition — the Tesseract worker was
+                // terminated by a TTS-off / language / engine switch, or the view moved —
+                // the recognize() promise rejects against a dead worker. That's expected:
+                // swallow it rather than flashing a spurious "OCR failed" over fresh state.
+                if (myGen !== ocrGeneration) {
+                    dlog('ocr_cancelled', err?.message ?? String(err));
+                } else {
+                    setTtsStatus('OCR failed — see console');
+                    console.error('[VDOMag OCR]', err);
+                    dlog('ocr_error', err?.message ?? String(err));
+                    updateTtsControls();
+                }
             } finally {
                 state.isOcrRunning = false;
                 if (_ocrRerunPending) { _ocrRerunPending = false; setTimeout(runOcr, 0); }
@@ -10366,6 +10697,17 @@
                 try { _ttsAudioOsc.stop(); } catch (e) {}
                 try { _ttsAudioOsc.disconnect(); } catch (e) {}
                 _ttsAudioOsc = null;
+            }
+        }
+        // Fully release the AudioContext when TTS is disabled. stopAudioKeepAlive() only
+        // drops the oscillator; the context itself otherwise stays open for the page's
+        // lifetime (browsers cap concurrent contexts, so leaving it warm is wasteful).
+        // Nulling it means _primeTtsAudio() lazily rebuilds one next time TTS is enabled.
+        function _closeTtsAudio() {
+            stopAudioKeepAlive();
+            if (_ttsAudioCtx) {
+                try { _ttsAudioCtx.close(); } catch (e) {}
+                _ttsAudioCtx = null;
             }
         }
 
@@ -10694,8 +11036,8 @@
         function ocrWordToOverlayPct(word) {
             if (!ocrCropInfo) return null;
             const { frameW, frameH } = ocrCropInfo;
-            const overlayW = transformLayer.offsetWidth  || workspace.clientWidth;
-            const overlayH = transformLayer.offsetHeight || workspace.clientHeight;
+            const overlayW = transformLayer?.offsetWidth  || workspace?.clientWidth;
+            const overlayH = transformLayer?.offsetHeight || workspace?.clientHeight;
 
             const inFrame  = ocrRectToFrame(word, ocrCropInfo);
             const flipped  = applyFrameFlip(inFrame, frameW, frameH, state.flipH, state.flipV);
@@ -10785,8 +11127,8 @@
 
         function buildDimMaskHoles() {
             if (!ttsDimMask || !ocrCropInfo || !ocrWords.length) return false;
-            const overlayW = transformLayer.offsetWidth  || workspace.clientWidth  || 1;
-            const overlayH = transformLayer.offsetHeight || workspace.clientHeight || 1;
+            const overlayW = transformLayer?.offsetWidth  || workspace?.clientWidth  || 1;
+            const overlayH = transformLayer?.offsetHeight || workspace?.clientHeight || 1;
             // px padding → per-axis percent (the 0..100 grid is stretched non-uniformly)
             const padX = TTS_DIM_PAD_PX / overlayW * 100;
             const padY = TTS_DIM_PAD_PX / overlayH * 100;
@@ -10831,7 +11173,7 @@
             // NB: explicit 'block' — '' would fall back to the base CSS display:none.
             ttsDimOverlay.style.display = 'block';
             // Match the magnifier's current pan/zoom right away (updateVisuals keeps it synced after).
-            ttsDimOverlay.style.transform = transformLayer.style.transform;
+            ttsDimOverlay.style.transform = transformLayer?.style.transform || '';
             requestAnimationFrame(() => ttsDimOverlay.classList.add('visible'));
         }
 
@@ -10879,7 +11221,7 @@
         function ocrWordToWorkspaceY(word) {
             const pct = ocrWordToOverlayPct(word);
             if (!pct) return null;
-            const overlayH = transformLayer.offsetHeight || workspace.clientHeight;
+            const overlayH = transformLayer?.offsetHeight || workspace?.clientHeight;
             const cy       = overlayH / 2;
             // Vertical centre of the word in overlay-local px (un-transformed)
             const localY   = (pct.top + pct.h / 2) / 100 * overlayH;
@@ -10990,11 +11332,11 @@
 
         if (ttsClickOverlay) {
             ttsClickOverlay.addEventListener('click', (e) => {
-                if (!ocrCropInfo || !ocrWords.length) return;
+                if (!ocrCropInfo || !ocrWords.length || !transformLayer) return;
 
                 const { frameW, frameH, srcX, srcY, srcW, srcH, ocrW, ocrH } = ocrCropInfo;
-                const overlayW = transformLayer.offsetWidth  || workspace.clientWidth;
-                const overlayH = transformLayer.offsetHeight || workspace.clientHeight;
+                const overlayW = transformLayer?.offsetWidth  || workspace?.clientWidth;
+                const overlayH = transformLayer?.offsetHeight || workspace?.clientHeight;
 
                 // Step 1: click in screen px → fraction of the transform-layer bounding rect
                 const rect   = transformLayer.getBoundingClientRect();
@@ -11087,15 +11429,20 @@
         }
 
         function setTtsStatus(html) {
-            ttsStatusLabel.innerHTML = html;
+            if (ttsStatusLabel) ttsStatusLabel.innerHTML = html;
         }
 
         function updateTtsControls() {
+            // The TTS bar is a single static unit — if its primary control is absent
+            // (markup removed / very early call) skip rather than throw.
+            if (!btnTtsPlay) return;
             const playing = ttsIsPlaying;
             const unit = state.ttsUnit || 'sentence';
             const isVideoActive = document.body.classList.contains('video-active');
-            document.getElementById('tts-play-icon').style.display  = playing ? 'none' : '';
-            document.getElementById('tts-pause-icon').style.display = playing ? ''     : 'none';
+            const _playIcon = document.getElementById('tts-play-icon');
+            const _pauseIcon = document.getElementById('tts-pause-icon');
+            if (_playIcon)  _playIcon.style.display  = playing ? 'none' : '';
+            if (_pauseIcon) _pauseIcon.style.display = playing ? ''     : 'none';
             // Context-aware aria-label
             let playLabel;
             if (playing) {
@@ -11131,6 +11478,9 @@
         // Called when the user explicitly disables TTS. Creating a new worker is expensive
         // (~10MB download) but keeping it idle wastes RAM; we accept the re-load cost.
         async function terminateTesseract() {
+            // Killing the worker rejects any recognize() still in flight; bump the token
+            // so runOcr() treats that rejection as a cancellation, not a real failure.
+            ocrGeneration++;
             if (tesseractWorker) {
                 try { await tesseractWorker.terminate(); } catch(_) {}
                 tesseractWorker = null;
@@ -11273,6 +11623,7 @@
         //   The freeze state no longer gates visibility; instead it gates whether
         //   pressing Play auto-freezes first.
         function syncTtsBar() {
+            if (!ttsBar) return;
             const isVideoActive = document.body.classList.contains('video-active');
             if (state.isTtsEnabled) {
                 ttsBar.classList.add('tts-enabled');
@@ -11294,6 +11645,7 @@
                 ttsBar.classList.remove('tts-enabled', 'bar-visible', 'home-tts-ready');
                 clearTtsState();
                 terminateTesseract();
+                _closeTtsAudio();   // release the WebAudio context when TTS is turned off
             }
         }
 
@@ -11428,8 +11780,16 @@
         // Focus trap helper — returns focusable elements within a container
         function getFocusable(container) {
             return Array.from(container.querySelectorAll(
-                'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-            )).filter(el => !el.closest('[style*="display: none"]') && !el.closest('[style*="display:none"]'));
+                'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+            )).filter(el => {
+                if (el.getAttribute('aria-hidden') === 'true') return false;
+                // getClientRects() is empty when the element OR any ancestor is
+                // display:none — catches class-based hiding, not just inline styles.
+                if (!el.getClientRects().length) return false;
+                // visibility:hidden / collapse elements still have rects but aren't focusable.
+                const vis = getComputedStyle(el).visibility;
+                return vis !== 'hidden' && vis !== 'collapse';
+            });
         }
 
         function trapFocus(container, e) {
@@ -11908,9 +12268,9 @@
             if (e.key === '9' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
                 if (e.repeat) return; // discrete toggle — don't flicker on key auto-repeat
                 if (document.body.classList.contains('video-active')) {
-                    document.getElementById('btn-extended-themes').click();
+                    document.getElementById('btn-extended-themes')?.click();
                 } else {
-                    document.getElementById('btn-toggle-extended').click();
+                    document.getElementById('btn-toggle-extended')?.click();
                 }
                 return;
             }
