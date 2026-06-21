@@ -193,6 +193,9 @@
             word-spacing: var(--word-spacing);
         }
         #intro-screen > * { flex-shrink: 0; }
+        /* Page-zoom layer for the landing page. applyIntroZoom() sets `zoom` (reflowing page
+           zoom up to 800%) and, past that, `transform: scale()` (magnify the rendered canvas). */
+        #intro-zoom-layer { width: 100%; transform-origin: top center; }
         .intro-wrap { max-width: 1080px; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 2rem); }
 
         /* ---- Hero ---- */
@@ -302,18 +305,22 @@
             letter-spacing: 0.09em; text-transform: uppercase; opacity: 0.65; margin-bottom: 0.55rem;
         }
 
-        /* ---- Stats strip ---- */
-        .intro-stats {
-            display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;
-            padding: clamp(1.5rem, 4vh, 2.5rem) clamp(1rem, 4vw, 2rem);
-            border-top: 2px solid color-mix(in srgb, var(--border-color) 20%, transparent);
-            border-bottom: 2px solid color-mix(in srgb, var(--border-color) 20%, transparent);
-            text-align: center;
+        /* In-page theme picker (color section) — applies the theme app-wide */
+        .intro-theme-picker { margin: 0.25rem 0 1.1rem; }
+        .intro-theme-label { display: block; font-size: 1rem; font-weight: 600; margin-bottom: 0.55rem; opacity: 0.92; }
+        .intro-theme-select-wrap { position: relative; max-width: 360px; }
+        #intro-theme-select {
+            width: 100%; appearance: none; -webkit-appearance: none;
+            font-size: 1.05rem; font-weight: 700; font-family: inherit; line-height: 1.2;
+            padding: 0.7em 2.6em 0.7em 1em; cursor: pointer;
+            background: var(--panel-bg); color: var(--text-color);
+            border: 3px solid var(--border-color); border-radius: 12px;
+            transition: border-color 0.15s ease;
         }
-        .stat { display: flex; flex-direction: column; gap: 0.15rem; }
-        .stat-num { font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800; line-height: 1; }
-        .stat-label { font-size: 0.92rem; opacity: 0.8; }
-        @media (max-width: 560px) { .intro-stats { grid-template-columns: repeat(2, 1fr); gap: 1.4rem 1rem; } }
+        #intro-theme-select:hover { border-color: var(--text-color); }
+        #intro-theme-select:focus-visible { outline: 3px solid var(--text-color); outline-offset: 2px; }
+        .intro-theme-caret { position: absolute; right: 0.85em; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-color); }
+
 
         /* ---- Media frame hover lift ---- */
         .feature-media .mock { transition: transform 0.3s ease, box-shadow 0.3s ease; }
@@ -322,8 +329,9 @@
         /* ============ IN-VIEW SVG MOTION (reduce-motion safe) ============ */
         /* Each animation runs ONLY while its graphic's container has .in-view (toggled by an
            IntersectionObserver in JS), so nothing animates off-screen. Paused is the default. */
-        @keyframes mxScroll { from { transform: translateY(0); } to { transform: translateY(-420px); } }
-        .mx-scroll { animation: mxScroll 16s linear infinite; animation-play-state: paused; will-change: transform; }
+        /* One set is 9 bands × 60px = 540px; translating exactly one set loops seamlessly. */
+        @keyframes mxScroll { from { transform: translateY(0); } to { transform: translateY(-540px); } }
+        .mx-scroll { animation: mxScroll 20s linear infinite; animation-play-state: paused; will-change: transform; }
         .anim-when-visible.in-view .mx-scroll { animation-play-state: running; }
 
         @keyframes heroLensSweep {
@@ -334,13 +342,38 @@
         .hero-lens { animation: heroLensSweep 11s ease-in-out infinite; animation-play-state: paused; will-change: transform; }
         .anim-when-visible.in-view .hero-lens { animation-play-state: running; }
 
-        /* Kill all intro motion under either the OS setting or the app's manual toggle. */
+        /* Hero feature cycle — four scenes cross-fade in turn (Magnify → Read aloud → Focus → Reading guide). */
+        @keyframes heroSceneCycle {
+            0%   { opacity: 0; }
+            4%   { opacity: 1; }
+            21%  { opacity: 1; }
+            25%  { opacity: 0; }
+            100% { opacity: 0; }
+        }
+        .hero-scene { opacity: 0; animation: heroSceneCycle 13s ease-in-out infinite; animation-play-state: paused; }
+        .hero-scene-1 { animation-delay: 0s; }
+        .hero-scene-2 { animation-delay: 3.25s; }
+        .hero-scene-3 { animation-delay: 6.5s; }
+        .hero-scene-4 { animation-delay: 9.75s; }
+        .anim-when-visible.in-view .hero-scene { animation-play-state: running; }
+
+        /* Decorative SVG text: never selectable (so document readers can't grab it). The SVGs are
+           role="img", so screen readers announce only the aria-label, not these strings — and JS
+           additionally marks each <text> aria-hidden as a belt-and-suspenders. */
+        #intro-screen svg, #intro-screen svg text { -webkit-user-select: none; user-select: none; }
+        #intro-screen svg text { pointer-events: none; }
+
+        /* Kill all intro motion under either the OS setting or the app's manual toggle.
+           With the cycle stopped, hold the first scene (Magnify) so the hero still shows a feature. */
         @media (prefers-reduced-motion: reduce) {
-            .mx-scroll, .hero-lens { animation: none !important; }
+            .mx-scroll, .hero-lens, .hero-scene { animation: none !important; }
+            .hero-scene-1 { opacity: 1 !important; }
             .feature-row:hover .feature-media .mock { transform: none; box-shadow: 0 12px 34px rgba(0,0,0,0.32); }
         }
         body.reduce-motion-active .mx-scroll,
-        body.reduce-motion-active .hero-lens { animation: none !important; }
+        body.reduce-motion-active .hero-lens,
+        body.reduce-motion-active .hero-scene { animation: none !important; }
+        body.reduce-motion-active .hero-scene-1 { opacity: 1 !important; }
         body.reduce-motion-active .feature-row:hover .feature-media .mock { transform: none; box-shadow: 0 12px 34px rgba(0,0,0,0.32); }
 
         /* --- Main UI Toolbar --- */
@@ -2066,6 +2099,25 @@
         .adv-tab-panel { display: none; flex-direction: column; gap: 15px; }
         .adv-tab-panel.active { display: flex; }
 
+        /* Experimental features panel */
+        .exp-warning {
+            display: flex; gap: 12px; align-items: flex-start;
+            padding: 14px 16px; border-radius: 10px;
+            border: 2px solid var(--border-color);
+            background: color-mix(in srgb, var(--text-color) 10%, transparent);
+        }
+        .exp-warning strong { display: block; font-size: 1rem; margin-bottom: 3px; }
+        .exp-warning span { font-size: 0.92rem; opacity: 0.88; line-height: 1.45; }
+        .exp-toggle-row {
+            display: flex; gap: 12px; align-items: flex-start; margin: 0;
+            padding: 12px 4px; cursor: pointer;
+            border-bottom: 1px solid color-mix(in srgb, var(--border-color) 22%, transparent);
+        }
+        .exp-toggle-row input[type="checkbox"] { margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--text-color); cursor: pointer; }
+        .exp-toggle-text { display: flex; flex-direction: column; gap: 3px; }
+        .exp-toggle-title { font-weight: bold; font-size: 1rem; }
+        .exp-toggle-desc { font-size: 0.88rem; opacity: 0.8; line-height: 1.45; }
+
         /* Bottom action bar */
         .adv-modal-footer {
             display: flex;
@@ -3079,6 +3131,10 @@
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                         Menubar
                     </button>
+                    <button class="adv-tab-btn" role="tab" aria-selected="false" aria-controls="tab-experimental" data-tab="tab-experimental">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2h6"/><path d="M10 2v6.3L4.4 18A2 2 0 0 0 6.1 21h11.8a2 2 0 0 0 1.7-3L14 8.3V2"/><path d="M7.5 14h9"/></svg>
+                        Experimental
+                    </button>
                 </nav>
 
                 <!-- Right content pane -->
@@ -3318,7 +3374,19 @@
                             <input type="range" id="adv-sharpen" min="0" max="1" step="0.05" value="0" aria-label="Sharpening amount">
                             <input type="number" id="adv-sharpen-num" min="0" max="1" step="0.05" value="0" aria-label="Sharpen value">
                         </div>
-                        <div style="display:flex; justify-content: flex-end; margin-top: 4px;">
+                        <div class="toolbar-divider" role="separator" aria-hidden="true" style="width:100%; height:2px; margin: 10px 0 6px;"></div>
+                        <p class="adv-label" style="margin-top:0;">Flip Image</p>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                            <button type="button" id="adv-flip-h" class="tool-btn" role="switch" aria-checked="false" aria-label="Flip image horizontally" style="flex:1; justify-content:center; min-width:130px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 9 21 13 17 17"></polyline><polyline points="7 9 3 13 7 17"></polyline><line x1="12" y1="3" x2="12" y2="21"></line></svg>
+                                Flip Horizontal
+                            </button>
+                            <button type="button" id="adv-flip-v" class="tool-btn" role="switch" aria-checked="false" aria-label="Flip image vertically" style="flex:1; justify-content:center; min-width:130px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 17 13 21 17 17"></polyline><polyline points="9 7 13 3 17 7"></polyline><line x1="3" y1="12" x2="21" y2="12"></line></svg>
+                                Flip Vertical
+                            </button>
+                        </div>
+                        <div style="display:flex; justify-content: flex-end; margin-top: 14px;">
                             <button class="tool-btn" id="btn-reset-video-controls" style="font-size:0.9rem;" aria-label="Reset all video controls to defaults">Reset Video Controls</button>
                         </div>
                     </div>
@@ -3482,6 +3550,33 @@
                         </div>
                         <p class="adv-explainer" style="margin-top:8px;">Tip: grab the <b>⠿ handle</b> on the left of the bar to drag it anywhere on screen. <span id="ttsbar-custom-note" style="display:none;">The bar is currently in a custom spot — pick an option above to dock it again.</span></p>
 
+                    </div>
+
+                    <!-- Experimental panel -->
+                    <div id="tab-experimental" class="adv-tab-panel" role="tabpanel">
+                        <div class="exp-warning" role="note">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                            <div>
+                                <strong>These features are experimental.</strong>
+                                <span>They aren’t fully tested and may be unstable, behave unexpectedly, or not work at all. Turn them on at your own discretion — everything still runs on your device.</span>
+                            </div>
+                        </div>
+
+                        <label class="exp-toggle-row">
+                            <input type="checkbox" id="exp-online-relay">
+                            <span class="exp-toggle-text">
+                                <span class="exp-toggle-title">Online relay mode (VDO.ninja)</span>
+                                <span class="exp-toggle-desc">Adds the “Online mode” option to screen sharing, streaming through the VDO.ninja relay for remote access instead of a local-only capture. Needs HTTPS; relay connectivity can be unreliable.</span>
+                            </span>
+                        </label>
+
+                        <label class="exp-toggle-row">
+                            <input type="checkbox" id="exp-ai-vlm">
+                            <span class="exp-toggle-text">
+                                <span class="exp-toggle-title">AI / VLM frame scanning</span>
+                                <span class="exp-toggle-desc">Enables the “Frame Scanning (AI/VLM)” tool, which periodically captures frames for vision-language analysis. Early and incomplete — accuracy and performance vary.</span>
+                            </span>
+                        </label>
                     </div>
 
                 </div><!-- /.adv-content-pane -->
@@ -3648,6 +3743,7 @@
     <!-- recolor with the active theme.                                     -->
     <!-- ================================================================= -->
     <div id="intro-screen" tabindex="-1">
+      <div id="intro-zoom-layer">
 
       <!-- ───────── HERO ───────── -->
       <header class="intro-hero">
@@ -3660,7 +3756,7 @@
         </div>
         <div class="intro-hero-inner intro-wrap">
           <span class="intro-eyebrow">Free · Private · Runs in your browser</span>
-          <h1>The magnifier that<br class="hero-br"> works for you</h1>
+          <h1>The magnifier that works for you</h1>
           <p class="lede">A friendlier way to see and read whatever’s on your screen — shaped around what’s comfortable for your eyes, and running entirely in your browser.</p>
           <div class="intro-cta-row">
             <button type="button" id="btn-get-started" class="btn-cta">
@@ -3674,67 +3770,100 @@
           </div>
           <div class="intro-trust">
             <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Nothing leaves your device</span>
-            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/><line x1="2" y1="2" x2="22" y2="22"/></svg> Works offline</span>
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Nothing to install</span>
             <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg> No sign-up, no account</span>
           </div>
 
           <div class="intro-hero-art anim-when-visible">
-            <svg viewBox="0 0 600 360" role="img" aria-label="A magnifier window enlarging a line of text, with a round magnifier lens zooming in on a word and a reading-line highlight.">
+            <svg viewBox="0 0 600 360" role="img" aria-label="A magnifier window cycling through its features: a lens magnifying a word, reading text aloud with a highlighted word and speaker, focus mode dimming everything but one line, and a reading-line guide.">
+              <defs><clipPath id="heroWin"><rect x="11" y="55" width="578" height="294" rx="4"/></clipPath></defs>
+              <!-- window frame + title bar (always visible) -->
               <rect x="8" y="8" width="584" height="344" rx="20" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
-              <rect x="8" y="8" width="584" height="48" rx="20" fill="var(--text-color)" opacity="0.08"/>
-              <circle cx="40" cy="32" r="7" fill="var(--text-color)" opacity="0.55"/>
-              <circle cx="64" cy="32" r="7" fill="var(--text-color)" opacity="0.35"/>
-              <circle cx="88" cy="32" r="7" fill="var(--text-color)" opacity="0.2"/>
-              <!-- "content" lines -->
-              <rect x="44" y="92"  width="380" height="18" rx="9" fill="var(--text-color)" opacity="0.3"/>
-              <rect x="44" y="126" width="300" height="18" rx="9" fill="var(--text-color)" opacity="0.3"/>
-              <!-- reading-line highlight band -->
-              <rect x="28" y="168" width="544" height="40" rx="8" fill="var(--text-color)" opacity="0.14"/>
-              <text x="44" y="197" font-size="26" font-weight="800" fill="var(--text-color)">the clearer view</text>
-              <rect x="44" y="232" width="420" height="18" rx="9" fill="var(--text-color)" opacity="0.3"/>
-              <rect x="44" y="266" width="260" height="18" rx="9" fill="var(--text-color)" opacity="0.3"/>
-              <!-- magnifier lens — slowly sweeps across the page while the graphic is in view -->
-              <g class="hero-lens">
-                <circle cx="452" cy="250" r="78" fill="var(--bg-color)" stroke="var(--text-color)" stroke-width="5"/>
-                <text x="452" y="272" font-size="62" font-weight="800" text-anchor="middle" fill="var(--text-color)">Aa</text>
-                <line x1="508" y1="306" x2="552" y2="350" stroke="var(--text-color)" stroke-width="9" stroke-linecap="round"/>
+              <rect x="8" y="8" width="584" height="46" fill="var(--text-color)" opacity="0.08"/>
+              <circle cx="40" cy="31" r="7" fill="var(--text-color)" opacity="0.55"/>
+              <circle cx="64" cy="31" r="7" fill="var(--text-color)" opacity="0.35"/>
+              <circle cx="88" cy="31" r="7" fill="var(--text-color)" opacity="0.2"/>
+              <!-- base text lines (always visible, dim) -->
+              <g fill="var(--text-color)" opacity="0.26">
+                <rect x="44" y="84"  width="384" height="15" rx="7.5"/>
+                <rect x="44" y="114" width="320" height="15" rx="7.5"/>
+                <rect x="44" y="144" width="372" height="15" rx="7.5"/>
+                <rect x="44" y="174" width="300" height="15" rx="7.5"/>
+                <rect x="44" y="204" width="356" height="15" rx="7.5"/>
+                <rect x="44" y="234" width="288" height="15" rx="7.5"/>
+                <rect x="44" y="264" width="340" height="15" rx="7.5"/>
               </g>
+
+              <g clip-path="url(#heroWin)">
+                <!-- SCENE 1 · Magnify (the lens sweeps while this scene is up) -->
+                <g class="hero-scene hero-scene-1">
+                  <g class="hero-lens">
+                    <circle cx="446" cy="196" r="72" fill="var(--bg-color)" stroke="var(--text-color)" stroke-width="5"/>
+                    <text x="446" y="217" font-size="58" font-weight="800" text-anchor="middle" fill="var(--text-color)">Aa</text>
+                    <line x1="498" y1="248" x2="540" y2="292" stroke="var(--text-color)" stroke-width="9" stroke-linecap="round"/>
+                  </g>
+                </g>
+                <!-- SCENE 2 · Read aloud (highlighted word + speaker) -->
+                <g class="hero-scene hero-scene-2">
+                  <rect x="40" y="167" width="176" height="29" rx="8" fill="var(--text-color)"/>
+                  <g transform="translate(472 92)">
+                    <path d="M2 18h14L34 4v44L16 34H2z" fill="var(--text-color)"/>
+                    <path d="M44 16a14 14 0 0 1 0 20" fill="none" stroke="var(--text-color)" stroke-width="4" stroke-linecap="round"/>
+                    <path d="M54 6a26 26 0 0 1 0 40" fill="none" stroke="var(--text-color)" stroke-width="4" stroke-linecap="round"/>
+                  </g>
+                </g>
+                <!-- SCENE 3 · Focus mode (dim everything but one line) -->
+                <g class="hero-scene hero-scene-3">
+                  <rect x="8" y="55" width="584" height="113" fill="var(--bg-color)" opacity="0.74"/>
+                  <rect x="8" y="222" width="584" height="130" fill="var(--bg-color)" opacity="0.74"/>
+                  <rect x="44" y="178" width="300" height="15" rx="7.5" fill="var(--text-color)"/>
+                  <rect x="44" y="200" width="220" height="15" rx="7.5" fill="var(--text-color)" opacity="0.85"/>
+                </g>
+                <!-- SCENE 4 · Reading guide (bright line + soft masks) -->
+                <g class="hero-scene hero-scene-4">
+                  <rect x="8" y="55" width="584" height="138" fill="var(--bg-color)" opacity="0.5"/>
+                  <rect x="8" y="232" width="584" height="120" fill="var(--bg-color)" opacity="0.5"/>
+                  <rect x="28" y="210" width="544" height="6" rx="3" fill="var(--text-color)"/>
+                </g>
+              </g>
+
+              <!-- caption pills (fade in/out with their scene) -->
+              <g class="hero-scene hero-scene-1 hero-cap"><rect x="40" y="310" width="116" height="32" rx="16" fill="var(--text-color)"/><text x="98" y="332" font-size="17" font-weight="800" text-anchor="middle" fill="var(--bg-color)">Magnify</text></g>
+              <g class="hero-scene hero-scene-2 hero-cap"><rect x="40" y="310" width="150" height="32" rx="16" fill="var(--text-color)"/><text x="115" y="332" font-size="17" font-weight="800" text-anchor="middle" fill="var(--bg-color)">Read aloud</text></g>
+              <g class="hero-scene hero-scene-3 hero-cap"><rect x="40" y="310" width="152" height="32" rx="16" fill="var(--text-color)"/><text x="116" y="332" font-size="17" font-weight="800" text-anchor="middle" fill="var(--bg-color)">Focus mode</text></g>
+              <g class="hero-scene hero-scene-4 hero-cap"><rect x="40" y="310" width="170" height="32" rx="16" fill="var(--text-color)"/><text x="125" y="332" font-size="17" font-weight="800" text-anchor="middle" fill="var(--bg-color)">Reading guide</text></g>
             </svg>
           </div>
         </div>
       </header>
-
-      <!-- ───────── STATS STRIP ───────── -->
-      <div class="intro-stats intro-wrap" role="list" aria-label="VDO Magnifier at a glance">
-        <div class="stat" role="listitem"><span class="stat-num">18</span><span class="stat-label">color themes</span></div>
-        <div class="stat" role="listitem"><span class="stat-num">40×</span><span class="stat-label">max zoom</span></div>
-        <div class="stat" role="listitem"><span class="stat-num">2</span><span class="stat-label">on-device OCR engines</span></div>
-        <div class="stat" role="listitem"><span class="stat-num">0</span><span class="stat-label">trackers or uploads</span></div>
-      </div>
 
       <!-- ───────── SVG COLOUR MATRIX ENGINE ───────── -->
       <section class="intro-section" aria-labelledby="feat-color-h">
         <div class="intro-wrap">
           <div class="feature-row">
             <div class="feature-media anim-when-visible">
-              <svg class="mock" viewBox="0 0 480 360" role="img" aria-label="Color themes stacked as slanted bands — white on black, yellow on black, black on white, yellow on blue, green on black, black on yellow — slowly scrolling past.">
+              <svg class="mock" viewBox="0 0 480 360" role="img" aria-label="Color themes stacked as bands — white on black, yellow on black, black on white, yellow on blue, green on black, black on yellow, cyan on black, amber on black, black on peach — slowly scrolling past.">
                 <defs><clipPath id="mxClip"><rect x="0" y="0" width="480" height="360" rx="13"/></clipPath></defs>
                 <g clip-path="url(#mxClip)">
                   <g class="mx-scroll">
-                    <g transform="translate(-30 -36) skewX(-15)">
-                      <g transform="translate(0 0)"><rect width="600" height="72" fill="#000000"/><text x="60" y="50" font-size="30" font-weight="800" fill="#ffffff">White on Black</text></g>
-                      <g transform="translate(0 70)"><rect width="600" height="72" fill="#000000"/><text x="60" y="50" font-size="30" font-weight="800" fill="#ffff00">Yellow on Black</text></g>
-                      <g transform="translate(0 140)"><rect width="600" height="72" fill="#ffffff"/><text x="60" y="50" font-size="30" font-weight="800" fill="#000000">Black on White</text></g>
-                      <g transform="translate(0 210)"><rect width="600" height="72" fill="#0000aa"/><text x="60" y="50" font-size="30" font-weight="800" fill="#ffff00">Yellow on Blue</text></g>
-                      <g transform="translate(0 280)"><rect width="600" height="72" fill="#000000"/><text x="60" y="50" font-size="30" font-weight="800" fill="#00ff00">Green on Black</text></g>
-                      <g transform="translate(0 350)"><rect width="600" height="72" fill="#ffff00"/><text x="60" y="50" font-size="30" font-weight="800" fill="#000000">Black on Yellow</text></g>
-                      <g transform="translate(0 420)"><rect width="600" height="72" fill="#000000"/><text x="60" y="50" font-size="30" font-weight="800" fill="#ffffff">White on Black</text></g>
-                      <g transform="translate(0 490)"><rect width="600" height="72" fill="#000000"/><text x="60" y="50" font-size="30" font-weight="800" fill="#ffff00">Yellow on Black</text></g>
-                      <g transform="translate(0 560)"><rect width="600" height="72" fill="#ffffff"/><text x="60" y="50" font-size="30" font-weight="800" fill="#000000">Black on White</text></g>
-                      <g transform="translate(0 630)"><rect width="600" height="72" fill="#0000aa"/><text x="60" y="50" font-size="30" font-weight="800" fill="#ffff00">Yellow on Blue</text></g>
-                      <g transform="translate(0 700)"><rect width="600" height="72" fill="#000000"/><text x="60" y="50" font-size="30" font-weight="800" fill="#00ff00">Green on Black</text></g>
-                      <g transform="translate(0 770)"><rect width="600" height="72" fill="#ffff00"/><text x="60" y="50" font-size="30" font-weight="800" fill="#000000">Black on Yellow</text></g>
-                    </g>
+                    <g transform="translate(0 0)"><rect width="480" height="60" fill="#000000"/><text x="26" y="39" font-size="26" font-weight="800" fill="#ffffff">White on Black</text></g>
+                    <g transform="translate(0 60)"><rect width="480" height="60" fill="#000000"/><text x="26" y="39" font-size="26" font-weight="800" fill="#ffff00">Yellow on Black</text></g>
+                    <g transform="translate(0 120)"><rect width="480" height="60" fill="#ffffff"/><text x="26" y="39" font-size="26" font-weight="800" fill="#000000">Black on White</text></g>
+                    <g transform="translate(0 180)"><rect width="480" height="60" fill="#0000aa"/><text x="26" y="39" font-size="26" font-weight="800" fill="#ffff00">Yellow on Blue</text></g>
+                    <g transform="translate(0 240)"><rect width="480" height="60" fill="#000000"/><text x="26" y="39" font-size="26" font-weight="800" fill="#00ff00">Green on Black</text></g>
+                    <g transform="translate(0 300)"><rect width="480" height="60" fill="#ffff00"/><text x="26" y="39" font-size="26" font-weight="800" fill="#000000">Black on Yellow</text></g>
+                    <g transform="translate(0 360)"><rect width="480" height="60" fill="#000000"/><text x="26" y="39" font-size="26" font-weight="800" fill="#00ffff">Cyan on Black</text></g>
+                    <g transform="translate(0 420)"><rect width="480" height="60" fill="#000000"/><text x="26" y="39" font-size="26" font-weight="800" fill="#ffbf00">Amber on Black</text></g>
+                    <g transform="translate(0 480)"><rect width="480" height="60" fill="#ffdab9"/><text x="26" y="39" font-size="26" font-weight="800" fill="#000000">Black on Peach</text></g>
+                    <g transform="translate(0 540)"><rect width="480" height="60" fill="#000000"/><text x="26" y="39" font-size="26" font-weight="800" fill="#ffffff">White on Black</text></g>
+                    <g transform="translate(0 600)"><rect width="480" height="60" fill="#000000"/><text x="26" y="39" font-size="26" font-weight="800" fill="#ffff00">Yellow on Black</text></g>
+                    <g transform="translate(0 660)"><rect width="480" height="60" fill="#ffffff"/><text x="26" y="39" font-size="26" font-weight="800" fill="#000000">Black on White</text></g>
+                    <g transform="translate(0 720)"><rect width="480" height="60" fill="#0000aa"/><text x="26" y="39" font-size="26" font-weight="800" fill="#ffff00">Yellow on Blue</text></g>
+                    <g transform="translate(0 780)"><rect width="480" height="60" fill="#000000"/><text x="26" y="39" font-size="26" font-weight="800" fill="#00ff00">Green on Black</text></g>
+                    <g transform="translate(0 840)"><rect width="480" height="60" fill="#ffff00"/><text x="26" y="39" font-size="26" font-weight="800" fill="#000000">Black on Yellow</text></g>
+                    <g transform="translate(0 900)"><rect width="480" height="60" fill="#000000"/><text x="26" y="39" font-size="26" font-weight="800" fill="#00ffff">Cyan on Black</text></g>
+                    <g transform="translate(0 960)"><rect width="480" height="60" fill="#000000"/><text x="26" y="39" font-size="26" font-weight="800" fill="#ffbf00">Amber on Black</text></g>
+                    <g transform="translate(0 1020)"><rect width="480" height="60" fill="#ffdab9"/><text x="26" y="39" font-size="26" font-weight="800" fill="#000000">Black on Peach</text></g>
                   </g>
                 </g>
               </svg>
@@ -3742,7 +3871,14 @@
             <div class="feature-text">
               <span class="feat-eyebrow">Color &amp; contrast</span>
               <h2 id="feat-color-h">A color engine built from scratch</h2>
-              <p>Eighteen ready-made high-contrast themes plus a custom builder — and the whole view recolors the instant you pick one. Try it right now: open the palette in the menubar above and watch <em>this page</em> change.</p>
+              <p>Eighteen ready-made high-contrast themes plus a custom builder — and the whole view recolors the instant you pick one.</p>
+              <div class="intro-theme-picker">
+                <label for="intro-theme-select" class="intro-theme-label">Try it right now — pick a theme and the whole app switches with it:</label>
+                <div class="intro-theme-select-wrap">
+                  <select id="intro-theme-select" aria-label="Choose a color theme"></select>
+                  <svg class="intro-theme-caret" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+              </div>
               <div class="dual-note">
                 <div class="note"><span class="note-label">Under the hood</span><p>A hand-tuned SVG <code>feColorMatrix</code> filter remaps every pixel on the GPU, so recoloring stays smooth even on live video at high zoom — no washed-out CSS overlay.</p></div>
                 <div class="note plain"><span class="note-label">In plain words</span><p>Pick the colors that are kindest to your eyes — yellow on black, soft dark, high contrast, or invent your own. The whole screen changes at once, instantly.</p></div>
@@ -3792,7 +3928,7 @@
               <p>Point the magnifier at a document, slide, or paused video and it speaks the words aloud, highlighting each one as it goes so you can follow along.</p>
               <div class="dual-note">
                 <div class="note"><span class="note-label">Under the hood</span><p>Two OCR engines — Tesseract and RapidOCR — run as local WebAssembly workers, paired with the browser's speech synthesis. Recognition and reading happen entirely on your machine.</p></div>
-                <div class="note plain"><span class="note-label">In plain words</span><p>It figures out the text in any picture and reads it to you. Because it all runs on your own computer, nothing you look at is ever uploaded — and it still works with no internet.</p></div>
+                <div class="note plain"><span class="note-label">In plain words</span><p>It figures out the text in any picture and reads it to you. Because the recognition all happens on your own computer, nothing you look at is ever uploaded to a server.</p></div>
               </div>
             </div>
           </div>
@@ -3931,7 +4067,7 @@
             <div class="mini-card">
               <svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l7 4v6c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
               <h3>Private by design</h3>
-              <p>No accounts, no trackers, no servers in the loop. It’s one HTML file that runs offline — your stuff stays yours.</p>
+              <p>No accounts, no trackers, no analytics. Your themes, notes, and the things you magnify never leave your browser — your stuff stays yours.</p>
             </div>
             <div class="mini-card">
               <svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>
@@ -3953,10 +4089,11 @@
               Get started
             </button>
           </div>
-          <p class="intro-fineprint">VDO Magnifier · a single HTML file that runs entirely in your browser.<br>Works best in Chrome or Edge for read-aloud on remote streams; magnifying and recoloring work everywhere.</p>
+          <p class="intro-fineprint">VDO Magnifier · a private, browser-based magnifier at magnifier.riley.vision.<br>Works best in Chrome or Edge for read-aloud on remote streams; magnifying and recoloring work everywhere.</p>
         </div>
       </footer>
 
+      </div><!-- /#intro-zoom-layer -->
     </div>
     <!-- ============ END LANDING / INTRO PAGE ============ -->
 
@@ -3999,7 +4136,7 @@
 
                 <!-- Options (shown before sharing starts) -->
                 <div id="ss-options-row" class="ss-quality-row" style="flex-direction: column; align-items: flex-start; gap: 8px; width: 100%;">
-                    <label style="cursor:pointer; font-size:0.9rem; display:flex; align-items:center; gap:8px;">
+                    <label id="ss-online-mode-label" style="cursor:pointer; font-size:0.9rem; display:none; align-items:center; gap:8px;">
                         <input type="checkbox" id="ss-online-mode">
                         Online mode (via VDO.ninja relay — enables remote access)
                     </label>
@@ -4562,6 +4699,7 @@
             setChecked('btn-mute',                state.isMuted);
             setChecked('btn-flip-h',              state.flipH);
             setChecked('btn-flip-v',              state.flipV);
+            if (typeof syncAdvFlipButtons === 'function') syncAdvFlipButtons();
             setChecked('btn-contrast',            state.isManualHighContrast);
             setChecked('btn-invert',              state.isManualInverted);
             // Video Settings dropdown mirrors
@@ -5442,6 +5580,8 @@
             flipH: false, flipV: false, isMuted: false,
             hoverPan: false, noMemory: false, reduceMotion: false,
             isScanActive: false,
+            expOnlineRelay: false,   // experimental: VDO.ninja online relay (gated in Settings → Experimental)
+            expAiVlm: false,         // experimental: AI/VLM frame scanning (gated in Settings → Experimental)
             isTtsEnabled: false,
             ttsUnit: 'sentence',
             ttsRegion: 'viewport',
@@ -6049,22 +6189,45 @@
             else chevron.setAttribute('points', '6 9 12 15 18 9');
         });
 
+        // --- In-page theme picker (landing color section) — applies app-wide ---
+        function _populateIntroThemeSelect() {
+            const sel = document.getElementById('intro-theme-select');
+            if (!sel) return;
+            sel.innerHTML = '';
+            themes.forEach((t, i) => {
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                opt.textContent = (i <= 8 ? i + ': ' : '') + t.name;   // mirror the 0–8 hotkey labels
+                sel.appendChild(opt);
+            });
+            const create = document.createElement('option');
+            create.value = '__create__';
+            create.textContent = '✎ Create your own…';
+            sel.appendChild(create);
+            if (themes.some(t => t.id === state.activeThemeId)) sel.value = state.activeThemeId;
+        }
+        function _syncIntroThemeSelect() {
+            const sel = document.getElementById('intro-theme-select');
+            if (sel && Array.from(sel.options).some(o => o.value === state.activeThemeId)) sel.value = state.activeThemeId;
+        }
+
         function updateActiveThemeUI() {
             document.querySelectorAll('[data-theme-id]').forEach(btn => {
                 const id = btn.getAttribute('data-theme-id');
                 const isSelected = (id === state.activeThemeId);
-                
+
                 if (btn.hasAttribute('aria-checked')) {
                     btn.setAttribute('aria-checked', isSelected.toString());
                 } else if (btn.hasAttribute('aria-pressed')) {
                     btn.setAttribute('aria-pressed', isSelected.toString());
                 }
-                
+
                 if (btn.classList.contains('toolbar-theme-btn') || btn.classList.contains('theme-swatch')) {
                     btn.style.outline = isSelected ? '3px solid var(--text-color)' : 'none';
                     btn.style.outlineOffset = isSelected ? '2px' : '';
                 }
             });
+            _syncIntroThemeSelect();
         }
 
         function createDropdownThemeBtn(t, index, displayName) {
@@ -6234,6 +6397,7 @@
                 }
             });
 
+            _populateIntroThemeSelect();   // keep the landing theme dropdown in sync with the list
             updateActiveThemeUI();
             adjustToolbar();
             _restoreThemeFocus();   // put the SR cursor back on the swatch that was focused
@@ -6715,6 +6879,7 @@
         // and lands focus where the user can act. The menubar was live the whole time, so
         // nothing about the toolbar needs re-initialising here.
         function enterApp(opts) {
+            introZoomLevel = 1; applyIntroZoom();   // leave the landing at 100% so the app isn't stuck zoomed
             document.body.classList.remove('intro-active');
             if (opts && opts.demo) {
                 // "Try an example" — the example button starts the demo stream + workspace itself
@@ -6725,6 +6890,37 @@
             if (wrapper && wrapper.scrollTo) wrapper.scrollTo(0, 0);
             const input = document.getElementById('vdo-input');
             if (input) requestAnimationFrame(() => input.focus());
+        }
+
+        // --- Experimental features gating (Settings → Experimental) ---
+        // Online relay + AI/VLM frame scanning are OFF by default and only become reachable once
+        // the user opts in. Reflects state.expOnlineRelay / state.expAiVlm onto the rest of the UI.
+        function applyExperimentalGating() {
+            // Online relay: reveal the "Online mode" screen-share option only when enabled.
+            const onlineLabel = document.getElementById('ss-online-mode-label');
+            const onlineCb = document.getElementById('ss-online-mode');
+            if (onlineLabel) onlineLabel.style.display = state.expOnlineRelay ? 'flex' : 'none';
+            if (!state.expOnlineRelay && onlineCb && onlineCb.checked) {
+                onlineCb.checked = false;
+                onlineCb.dispatchEvent(new Event('change'));   // collapse bitrate row, reset to local
+            }
+            // AI/VLM frame scanning: keep the Scan button disabled unless enabled AND a video is up.
+            const sb = document.getElementById('btn-scan');
+            const videoActive = document.body.classList.contains('video-active');
+            if (sb) sb.disabled = !(state.expAiVlm && videoActive);
+            if (!state.expAiVlm && state.isScanActive) {
+                state.isScanActive = false;
+                if (typeof stopSnapshotPipeline === 'function') stopSnapshotPipeline();
+                setIndicator('ind-scan', false);
+                if (sb) { sb.classList.remove('active-state'); sb.setAttribute('aria-pressed', 'false'); }
+            }
+        }
+        // Keep the Advanced → Video Controls flip switches in lock-step with state.
+        function syncAdvFlipButtons() {
+            [['adv-flip-h', state.flipH], ['adv-flip-v', state.flipV]].forEach(([id, on]) => {
+                const b = document.getElementById(id);
+                if (b) { b.classList.toggle('active-state', !!on); b.setAttribute('aria-checked', on ? 'true' : 'false'); }
+            });
         }
 
         // --- Initialization ---
@@ -6750,6 +6946,50 @@
                 }, { threshold: 0.2 });
                 targets.forEach(t => io.observe(t));
             })();
+
+            // --- Experimental features toggles (Settings → Experimental) ---
+            const expOnline = document.getElementById('exp-online-relay');
+            if (expOnline) {
+                expOnline.checked = !!state.expOnlineRelay;
+                expOnline.addEventListener('change', () => {
+                    state.expOnlineRelay = expOnline.checked;
+                    applyExperimentalGating();
+                    savePrefs();
+                    showStatus(expOnline.checked ? 'Online relay enabled (experimental)' : 'Online relay disabled');
+                });
+            }
+            const expAi = document.getElementById('exp-ai-vlm');
+            if (expAi) {
+                expAi.checked = !!state.expAiVlm;
+                expAi.addEventListener('change', () => {
+                    state.expAiVlm = expAi.checked;
+                    applyExperimentalGating();
+                    savePrefs();
+                    showStatus(expAi.checked ? 'AI/VLM scanning enabled (experimental)' : 'AI/VLM scanning disabled');
+                });
+            }
+            applyExperimentalGating();
+
+            // --- Flip controls in Advanced → Video Controls ---
+            document.getElementById('adv-flip-h')?.addEventListener('click', () => runToolbarAction('btn-flip-h'));
+            document.getElementById('adv-flip-v')?.addEventListener('click', () => runToolbarAction('btn-flip-v'));
+            syncAdvFlipButtons();
+
+            // --- Landing color-section theme picker (applies app-wide; options filled by renderAllThemes) ---
+            const introThemeSel = document.getElementById('intro-theme-select');
+            if (introThemeSel) {
+                introThemeSel.addEventListener('change', () => {
+                    if (introThemeSel.value === '__create__') {
+                        introThemeSel.value = state.activeThemeId;   // revert; the builder handles creation
+                        openCustomModal();
+                        return;
+                    }
+                    applyTheme(introThemeSel.value, false);
+                });
+            }
+            // Decorative SVG text must not be announced by screen readers (the SVGs already carry
+            // role="img" + aria-label; this hides the raw strings too, belt-and-suspenders).
+            document.querySelectorAll('#intro-screen svg text').forEach(t => t.setAttribute('aria-hidden', 'true'));
 
             if (state.isMenuHidden) toolbar.style.display = 'none';
             // Apply reduce motion: use saved preference, or fall back to OS setting
@@ -7044,7 +7284,7 @@
                 document.getElementById('setup-screen-wrapper').style.display = 'none';
                 workspace.style.display = 'block';
                 if(freezeBtn()) freezeBtn().disabled = false;
-                if(scanBtn()) scanBtn().disabled = false;
+                if(scanBtn()) scanBtn().disabled = !state.expAiVlm; // gated by Settings → Experimental
                 if (state.isLargeCursorActive) document.body.classList.add('large-cursor-active');
                 { const tm = document.getElementById('text-mute'); if (tm) tm.innerText = state.isMuted ? "Unmute Audio" : "Mute Audio"; }
                 renderColors();
@@ -7091,7 +7331,7 @@
                 document.getElementById('setup-screen-wrapper').style.display = 'none';
                 workspace.style.display = 'block';
                 if(freezeBtn()) freezeBtn().disabled = false;
-                if(scanBtn()) scanBtn().disabled = false;
+                if(scanBtn()) scanBtn().disabled = !state.expAiVlm; // gated by Settings → Experimental
 
                 vdoFrame.addEventListener('load', () => {
                     if (state.isMuted && vdoOrigin !== '*') {
@@ -7606,8 +7846,30 @@
         // stationary while zooming — wheel zoom anchors at the cursor, pinch at the touch
         // midpoint. Omitted (buttons, keyboard, reset) ⇒ anchors at the workspace centre,
         // which is also the behaviour when the "Zoom toward pointer" setting is off.
+        // --- Landing-page zoom: page-zoom (reflow) up to 800%, then magnify the rendered canvas ---
+        const INTRO_ZOOM_PAGE_CAP = 8;   // 800% — past this, scale the canvas instead of the layout
+        const INTRO_ZOOM_MAX = 20;
+        let introZoomLevel = 1;
+        function applyIntroZoom() {
+            const layer = document.getElementById('intro-zoom-layer');
+            const intro = document.getElementById('intro-screen');
+            if (!layer) return;
+            const pageZoom   = Math.min(introZoomLevel, INTRO_ZOOM_PAGE_CAP); // reflowing browser-style zoom
+            const canvasZoom = introZoomLevel / pageZoom;                     // 1 until the cap, then > 1
+            layer.style.zoom = pageZoom !== 1 ? String(pageZoom) : '';
+            layer.style.transform = canvasZoom > 1 ? `scale(${canvasZoom})` : '';
+            if (intro) intro.style.overflowX = canvasZoom > 1 ? 'auto' : '';
+        }
+
         function setScale(newScale, focalClientX, focalClientY) {
             const isVideoActive = document.body.classList.contains('video-active');
+            // Landing page (no video): zoom the page itself, not the hidden video layer.
+            if (!isVideoActive && document.body.classList.contains('intro-active')) {
+                introZoomLevel = Math.max(1, Math.min(newScale, INTRO_ZOOM_MAX));
+                applyIntroZoom();
+                showStatus(`Zoom: ${Math.round(introZoomLevel * 100)}%`);
+                return;
+            }
             if (isVideoActive) {
                 // FIX: Restore upper bound cap using CONSTANTS.MAX_SCALE to prevent unbounded zoom
                 const targetScale = Math.max(1.0, Math.min(newScale, CONSTANTS.MAX_SCALE));
@@ -7638,7 +7900,8 @@
 
         function performZoom(direction) {
             const isVideoActive = document.body.classList.contains('video-active');
-            const currentScale = isVideoActive ? state.streamScale : state.homeScale;
+            const onIntro = !isVideoActive && document.body.classList.contains('intro-active');
+            const currentScale = onIntro ? introZoomLevel : (isVideoActive ? state.streamScale : state.homeScale);
             let targetScale;
             // Step precedence: ?step= URL param → user's saved increment → adaptive curve
             const fixedStep = customZoomStep || state.zoomStepPref;
@@ -7663,7 +7926,7 @@
                     : Math.floor((currentScale - 0.01) * inverseStep) / inverseStep;
             }
             setScale(targetScale);
-            triggerSnapEasing();
+            if (!onIntro) triggerSnapEasing();   // snap easing animates the video layer, not the page
         }
 
         function toggleMenu() {
