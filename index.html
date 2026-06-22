@@ -271,11 +271,95 @@
         }
 
         /* ---- Mini-card grid ---- */
-        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(244px, 1fr)); gap: 1.25rem; }
-        .mini-card { background: var(--panel-bg); border: 3px solid var(--border-color); border-radius: 14px; padding: 1.5rem; display: flex; flex-direction: column; gap: 0.55rem; }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(244px, 1fr)); gap: 1.25rem; justify-content: center; }
+        .mini-card { background: var(--panel-bg); border: 3px solid var(--border-color); border-radius: 14px; padding: 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.55rem; }
         .mini-card .mini-icon { width: 42px; height: 42px; color: var(--text-color); }
         .mini-card h3 { margin: 0; font-size: 1.2rem; font-weight: 800; }
         .mini-card p { margin: 0; font-size: 1rem; line-height: 1.5; opacity: 0.9; }
+        /* "Learn how" button on the two source cards — pinned to the card bottom */
+        .mini-card-btn {
+            margin-top: auto; display: inline-flex; align-items: center; gap: 0.5em; text-decoration: none;
+            background: transparent; color: var(--text-color); font-family: inherit;
+            border: 2px solid var(--border-color); border-radius: 10px;
+            font-size: 0.95rem; font-weight: 700; padding: 0.5em 1.05em; cursor: pointer;
+            transition: background 0.12s ease, color 0.12s ease;
+        }
+        .mini-card-btn svg { width: 1.05em; height: 1.05em; }
+        .mini-card-btn:hover, .mini-card-btn:focus-visible { background: var(--text-color); color: var(--bg-color); outline: 3px solid var(--border-color); outline-offset: 2px; }
+
+        /* ============================================================== */
+        /* === GETTING-STARTED GUIDE PAGES (#guide-screen, /guide/*) ===== */
+        /* Real routed pages, not a modal. Same flex-column scroll model as */
+        /* the landing, with their own page-zoom layer. body.guide-active   */
+        /* shows this view and hides the landing / home / workspace.        */
+        /* ============================================================== */
+        #guide-screen { display: none; }
+        body.guide-active #guide-screen { display: flex; }
+        body.guide-active #intro-screen,
+        body.guide-active #setup-screen-wrapper,
+        body.guide-active #workspace { display: none !important; }
+        #guide-screen {
+            width: 100%; flex: 1 1 0%; min-height: 0;
+            flex-direction: column; overflow-y: auto; overflow-x: hidden;
+            overscroll-behavior: contain; position: relative;
+            color: var(--text-color); background: var(--bg-color);
+            scroll-behavior: smooth;
+            letter-spacing: var(--letter-spacing); word-spacing: var(--word-spacing);
+        }
+        #guide-screen > * { flex-shrink: 0; }   /* same gotcha as #intro-screen: don't let flex compress the tall page */
+        #guide-zoom-layer { width: 100%; transform-origin: top center; }   /* applyIntroZoom() drives this too */
+        .guide-wrap { max-width: 880px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 2.5rem) clamp(1rem, 4vw, 2rem) clamp(3rem, 8vh, 5rem); }
+        .guide-doc[hidden] { display: none; }
+
+        .guide-back {
+            display: inline-flex; align-items: center; gap: 0.45em;
+            font-size: 1rem; font-weight: 700; color: var(--text-color); text-decoration: none;
+            border: 2px solid var(--border-color); border-radius: 999px; padding: 0.4em 1em;
+            margin-bottom: 1.75rem; transition: background 0.12s ease, color 0.12s ease;
+        }
+        .guide-back svg { width: 1.05em; height: 1.05em; }
+        .guide-back:hover, .guide-back:focus-visible { background: var(--text-color); color: var(--bg-color); outline: 3px solid var(--border-color); outline-offset: 2px; }
+
+        .guide-head { margin-bottom: 2.25rem; }
+        .guide-eyebrow {
+            display: inline-block; font-size: 0.82rem; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase;
+            opacity: 0.8; margin-bottom: 0.85rem; border: 2px solid var(--border-color); border-radius: 999px; padding: 0.3em 0.9em;
+        }
+        .guide-head h1 { font-size: clamp(1.9rem, 4.5vw, 2.9rem); line-height: 1.1; margin: 0 0 0.85rem; font-weight: 800; letter-spacing: -0.01em; }
+        .guide-lede { font-size: clamp(1.08rem, 2vw, 1.3rem); line-height: 1.55; max-width: 56ch; margin: 0; opacity: 0.92; }
+
+        .guide-figure-block { margin: 0 0 2.5rem; }
+        .guide-figure-block > h2 { font-size: clamp(1.3rem, 2.6vw, 1.7rem); font-weight: 800; margin: 0 0 0.6rem; border: none; padding: 0; }
+        .guide-figure-block > p { font-size: 1.06rem; line-height: 1.55; margin: 0 0 0.5rem; max-width: 62ch; }
+
+        .guide-rec { border: 3px solid var(--border-color); border-radius: 16px; padding: clamp(1.1rem, 3vw, 1.75rem); margin-bottom: 2.75rem; background: color-mix(in srgb, var(--text-color) 6%, transparent); }
+        .guide-rec-badge { display: inline-block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; background: var(--text-color); color: var(--bg-color); border-radius: 999px; padding: 0.3em 0.85em; margin-bottom: 0.7rem; }
+
+        .guide-figure { margin: 1.25rem 0 0.25rem; }
+        .guide-svg {
+            display: block; width: 100%; height: auto; max-width: 620px; margin: 0 auto;
+            border: 2px solid var(--border-color); border-radius: 14px;
+            background: color-mix(in srgb, var(--text-color) 3%, transparent);
+            padding: clamp(0.5rem, 2vw, 1rem);
+        }
+        .guide-svg-tag { font-size: 13px; font-weight: 700; fill: var(--text-color); opacity: 0.6; }
+        .guide-figure figcaption { text-align: center; font-size: 0.96rem; opacity: 0.78; margin-top: 0.7rem; line-height: 1.45; }
+
+        .guide-steps, .guide-list { margin: 1rem 0 0; padding-left: 1.4rem; display: grid; gap: 0.7rem; }
+        .guide-steps li, .guide-list li { font-size: 1.05rem; line-height: 1.55; padding-left: 0.2rem; }
+        #guide-screen kbd { font-family: inherit; font-weight: 700; border: 1.5px solid var(--border-color); border-radius: 5px; padding: 0.05em 0.4em; font-size: 0.9em; white-space: nowrap; }
+        #guide-screen code { font-size: 0.92em; padding: 0.05em 0.35em; border-radius: 4px; background: color-mix(in srgb, var(--text-color) 12%, transparent); overflow-wrap: anywhere; }
+        .guide-note { font-size: 0.98rem; line-height: 1.55; margin: 2rem 0 0; border-left: 4px solid var(--border-color); padding: 0.4rem 0 0.4rem 1rem; opacity: 0.92; }
+
+        .guide-foot { margin-top: 2.5rem; padding-top: 1.75rem; border-top: 2px solid var(--border-color); display: flex; flex-direction: column; align-items: flex-start; gap: 1.25rem; }
+        .guide-crosslink {
+            display: inline-flex; align-items: center; gap: 0.5em; flex-wrap: wrap;
+            font-size: 1.02rem; color: var(--text-color); text-decoration: none;
+            border-bottom: 2px solid transparent; padding-bottom: 2px; line-height: 1.4;
+        }
+        .guide-crosslink svg { width: 1.05em; height: 1.05em; flex-shrink: 0; }
+        .guide-crosslink:hover { border-bottom-color: var(--text-color); }
+        .guide-crosslink:focus-visible { outline: 3px solid var(--text-color); outline-offset: 3px; border-radius: 3px; }
 
         /* ---- Footer CTA ---- */
         .intro-footer { text-align: center; padding: clamp(3rem, 8vh, 5rem) 0; }
@@ -305,21 +389,50 @@
             letter-spacing: 0.09em; text-transform: uppercase; opacity: 0.65; margin-bottom: 0.55rem;
         }
 
-        /* In-page theme picker (color section) — applies the theme app-wide */
+        /* In-page theme picker (color section) — a custom dropdown with hover-preview + drag
+           reorder, mirroring the menubar's theme menu. Applies app-wide. */
         .intro-theme-picker { margin: 0.25rem 0 1.1rem; }
         .intro-theme-label { display: block; font-size: 1rem; font-weight: 600; margin-bottom: 0.55rem; opacity: 0.92; }
-        .intro-theme-select-wrap { position: relative; max-width: 360px; }
-        #intro-theme-select {
-            width: 100%; appearance: none; -webkit-appearance: none;
-            font-size: 1.05rem; font-weight: 700; font-family: inherit; line-height: 1.2;
-            padding: 0.7em 2.6em 0.7em 1em; cursor: pointer;
+        .intro-theme-dd { position: relative; max-width: 380px; }
+        .intro-theme-trigger {
+            width: 100%; display: flex; align-items: center; gap: 0.65em;
+            font-size: 1.05rem; font-weight: 700; font-family: inherit; line-height: 1.2; text-align: left;
+            padding: 0.6em 0.85em; cursor: pointer;
             background: var(--panel-bg); color: var(--text-color);
             border: 3px solid var(--border-color); border-radius: 12px;
             transition: border-color 0.15s ease;
         }
-        #intro-theme-select:hover { border-color: var(--text-color); }
-        #intro-theme-select:focus-visible { outline: 3px solid var(--text-color); outline-offset: 2px; }
-        .intro-theme-caret { position: absolute; right: 0.85em; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-color); }
+        .intro-theme-trigger:hover { border-color: var(--text-color); }
+        .intro-theme-trigger:focus-visible { outline: 3px solid var(--text-color); outline-offset: 2px; }
+        .intro-theme-trigger-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .intro-theme-caret { flex-shrink: 0; color: var(--text-color); transition: transform 0.15s ease; }
+        .intro-theme-trigger[aria-expanded="true"] .intro-theme-caret { transform: rotate(180deg); }
+        /* swatch chip (shows the theme's own colors) */
+        .intro-theme-trigger-sw, .intro-theme-opt-sw {
+            flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+            width: 2.1em; height: 1.7em; border-radius: 6px; border: 2px solid currentColor;
+            font-size: 0.78em; font-weight: 800;
+        }
+        .intro-theme-menu {
+            position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+            max-height: min(52vh, 360px); overflow-y: auto; overscroll-behavior: contain;
+            background: var(--panel-bg); border: 3px solid var(--border-color); border-radius: 12px;
+            box-shadow: 0 14px 38px rgba(0,0,0,0.4); padding: 6px; display: flex; flex-direction: column; gap: 3px;
+        }
+        .intro-theme-menu[hidden] { display: none; }
+        .intro-theme-opt {
+            display: flex; align-items: center; gap: 0.65em; width: 100%; text-align: left;
+            font-size: 1rem; font-weight: 700; font-family: inherit; cursor: grab;
+            padding: 0.45em 0.6em; border: 2px solid transparent; border-radius: 8px;
+            background: transparent; color: var(--text-color);
+        }
+        .intro-theme-opt:hover, .intro-theme-opt:focus-visible { background: color-mix(in srgb, var(--text-color) 14%, transparent); outline: none; border-color: var(--border-color); }
+        .intro-theme-opt.active { border-color: var(--text-color); }
+        .intro-theme-opt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .intro-theme-opt[draggable="true"]:active { cursor: grabbing; }
+        .intro-theme-opt.drag-over { border-color: var(--text-color); border-style: dashed; }
+        .intro-theme-create { border-top: 2px solid color-mix(in srgb, var(--border-color) 25%, transparent); border-radius: 0 0 6px 6px; margin-top: 2px; }
+        .intro-theme-create .intro-theme-opt-sw { border-style: dashed; }
 
 
         /* ---- Media frame hover lift ---- */
@@ -360,8 +473,9 @@
         /* Decorative SVG text: never selectable (so document readers can't grab it). The SVGs are
            role="img", so screen readers announce only the aria-label, not these strings — and JS
            additionally marks each <text> aria-hidden as a belt-and-suspenders. */
-        #intro-screen svg, #intro-screen svg text { -webkit-user-select: none; user-select: none; }
-        #intro-screen svg text { pointer-events: none; }
+        #intro-screen svg, #intro-screen svg text,
+        #guide-screen svg, #guide-screen svg text { -webkit-user-select: none; user-select: none; }
+        #intro-screen svg text, #guide-screen svg text { pointer-events: none; }
 
         /* Kill all intro motion under either the OS setting or the app's manual toggle.
            With the cycle stopped, hold the first scene (Magnify) so the hero still shows a feature. */
@@ -1148,17 +1262,21 @@
         /* DOM element highlight for home-screen TTS reading —
            same yellow as the word-highlight box, applied as a class on the element itself */
         .tts-page-highlight {
-            outline: 3px solid var(--tts-highlight-color, #FFD700) !important;
+            /* The outline uses --text-color, which the theme guarantees contrasts the background,
+               so the reading highlight is always visible. The chosen highlight color is the accent
+               fill (a colour-only outline could fail 3:1 contrast on light/yellow/high-contrast
+               themes — e.g. gold on a yellow page). */
+            outline: 3px solid var(--text-color) !important;
             outline-offset: 3px;
             border-radius: 5px;
-            background-color: color-mix(in srgb, var(--tts-highlight-color, #FFD700) 25%, transparent) !important;
+            background-color: color-mix(in srgb, var(--tts-highlight-color, #FFD700) 35%, transparent) !important;
             scroll-margin-bottom: 100px;
         }
         /* Fallback for browsers without color-mix (Safari < 16.2, Firefox < 113) */
         @supports not (background: color-mix(in srgb, red, blue)) {
             .tts-page-highlight {
-                outline: 3px solid var(--tts-highlight-color, #FFD700) !important;
-                background-color: rgba(255, 215, 0, 0.2) !important;
+                outline: 3px solid var(--text-color) !important;
+                background-color: rgba(255, 215, 0, 0.25) !important;
             }
         }
 
@@ -2610,7 +2728,7 @@
             flex-shrink: 0;
             gap: 12px;
         }
-        .tc-header h2 { margin: 0; font-size: 1.15rem; border: none; padding: 0; white-space: nowrap; }
+        .tc-header h2 { margin: 0; font-size: 1.15rem; border: none; padding: 0; min-width: 0; overflow-wrap: anywhere; }
         /* ── Live toolbar preview strip ── */
         #tc-live-preview {
             flex-shrink: 0;
@@ -3658,6 +3776,10 @@
         </div>
     </div>
 
+    <!-- Getting-started Guide Modal -->
+    <!-- (The getting-started guide is no longer a modal — it lives as routed pages
+         #guide-screen, further down inside #main-content. See showGuide().) -->
+
     <!-- Font Browser Modal — searchable system + Google fonts -->
     <div id="font-browser-modal" class="modal-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="font-browser-title">
         <div class="modal-content" style="max-width:min(96vw, calc(640px * var(--text-scale))); width:92%; height:min(90vh, calc(680px * var(--text-scale))); max-height:90vh; padding:0; gap:0; overflow:hidden; display:flex; flex-direction:column;">
@@ -3873,10 +3995,14 @@
               <h2 id="feat-color-h">A color engine built from scratch</h2>
               <p>Eighteen ready-made high-contrast themes plus a custom builder — and the whole view recolors the instant you pick one.</p>
               <div class="intro-theme-picker">
-                <label for="intro-theme-select" class="intro-theme-label">Try it right now — pick a theme and the whole app switches with it:</label>
-                <div class="intro-theme-select-wrap">
-                  <select id="intro-theme-select" aria-label="Choose a color theme"></select>
-                  <svg class="intro-theme-caret" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                <span class="intro-theme-label" id="intro-theme-label">Try it right now — hover to preview, drag to reorder, click to keep. Your choice and order carry into the whole app.</span>
+                <div class="intro-theme-dd">
+                  <button type="button" id="intro-theme-trigger" class="intro-theme-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="intro-theme-menu" aria-labelledby="intro-theme-label intro-theme-trigger-name">
+                    <span class="intro-theme-trigger-sw" id="intro-theme-trigger-sw" aria-hidden="true">Aa</span>
+                    <span class="intro-theme-trigger-name" id="intro-theme-trigger-name">Natural Colors</span>
+                    <svg class="intro-theme-caret" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </button>
+                  <div id="intro-theme-menu" class="intro-theme-menu" role="listbox" aria-label="Color themes" tabindex="-1" hidden></div>
                 </div>
               </div>
               <div class="dual-note">
@@ -4026,11 +4152,19 @@
               <svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
               <h3>Paste a link</h3>
               <p>Drop in a VDO.ninja view link and you’re magnifying their stream in seconds — great for a remote whiteboard or a shared camera.</p>
+              <a class="mini-card-btn" href="/guide/vdo-link" data-guide-nav="link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                How to set up a link
+              </a>
             </div>
             <div class="mini-card">
               <svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
               <h3>Share your screen</h3>
               <p>Magnify an app, a document, or a video call right on your own computer. Capture stays on-device unless you opt into online relay.</p>
+              <a class="mini-card-btn" href="/guide/your-screen" data-guide-nav="screen">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                How to share your screen
+              </a>
             </div>
           </div>
         </div>
@@ -4096,6 +4230,267 @@
       </div><!-- /#intro-zoom-layer -->
     </div>
     <!-- ============ END LANDING / INTRO PAGE ============ -->
+
+    <!-- ================================================================= -->
+    <!-- GETTING-STARTED GUIDE PAGES                                        -->
+    <!-- Real routed pages (not a modal): /guide/your-screen and            -->
+    <!-- /guide/vdo-link, driven by the History API (see showGuide()).      -->
+    <!-- body.guide-active shows this and hides the landing/home/workspace. -->
+    <!-- Two <article> docs share the view; only the routed one is visible. -->
+    <!-- All illustrations are inline themeable SVG (single-file, recolor   -->
+    <!-- with the active theme, decorative text is non-selectable).         -->
+    <!-- ================================================================= -->
+    <div id="guide-screen" tabindex="-1">
+      <div id="guide-zoom-layer">
+      <div class="guide-wrap">
+        <a class="guide-back" id="guide-back" href="./">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 18l-6-6 6-6"/></svg>
+          Back to overview
+        </a>
+
+        <!-- ───────────── GUIDE A · SHARE YOUR OWN SCREEN ───────────── -->
+        <article class="guide-doc" id="guide-doc-screen">
+          <header class="guide-head">
+            <span class="guide-eyebrow">Getting started</span>
+            <h1>Magnify your own screen</h1>
+            <p class="guide-lede">The quickest way to enlarge a document, slide, video call, or app that’s already on <strong>your</strong> computer — nothing leaves your device.</p>
+          </header>
+
+          <!-- Recommended: split-screen workflow -->
+          <section class="guide-figure-block guide-rec">
+            <span class="guide-rec-badge">Easiest — recommended</span>
+            <h2>Work on one half, magnify the other</h2>
+            <p>Snap this magnifier to one side of your screen and put whatever you’re reading on the other side. You enlarge the one half while you keep typing, clicking, and scrolling on the other.</p>
+            <figure class="guide-figure">
+              <svg viewBox="0 0 640 360" class="guide-svg" role="img" aria-label="One screen split down the middle: your document fills the left half while the VDO Magnifier shows a zoomed-in view of it on the right half.">
+                <!-- monitor -->
+                <rect x="32" y="20" width="576" height="262" rx="16" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <rect x="50" y="38" width="540" height="226" rx="8" fill="var(--bg-color)" stroke="var(--border-color)" stroke-width="2"/>
+                <!-- stand -->
+                <path d="M298 282 h44 l12 30 h-68 z" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <rect x="262" y="310" width="116" height="12" rx="6" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <!-- divider -->
+                <line x1="320" y1="46" x2="320" y2="256" stroke="var(--border-color)" stroke-width="2" stroke-dasharray="7 7"/>
+                <!-- LEFT: your document -->
+                <rect x="70" y="58" width="170" height="15" rx="5" fill="var(--text-color)" opacity="0.72"/>
+                <g fill="var(--text-color)" opacity="0.26">
+                  <rect x="70" y="92"  width="220" height="9" rx="4.5"/>
+                  <rect x="70" y="112" width="198" height="9" rx="4.5"/>
+                  <rect x="70" y="132" width="224" height="9" rx="4.5"/>
+                  <rect x="70" y="152" width="168" height="9" rx="4.5"/>
+                  <rect x="70" y="182" width="210" height="9" rx="4.5"/>
+                  <rect x="70" y="202" width="182" height="9" rx="4.5"/>
+                </g>
+                <text x="70" y="244" class="guide-svg-tag">Your work</text>
+                <!-- RIGHT: the magnifier -->
+                <rect x="340" y="56" width="232" height="150" rx="8" fill="var(--text-color)" opacity="0.06"/>
+                <text x="360" y="150" font-size="78" font-weight="800" fill="var(--text-color)">Aa</text>
+                <circle cx="506" cy="116" r="38" fill="none" stroke="var(--text-color)" stroke-width="6" opacity="0.82"/>
+                <line x1="533" y1="143" x2="560" y2="170" stroke="var(--text-color)" stroke-width="9" stroke-linecap="round" opacity="0.82"/>
+                <text x="360" y="244" class="guide-svg-tag">Magnified</text>
+              </svg>
+              <figcaption>Snap the magnifier to one half and your work to the other.</figcaption>
+            </figure>
+            <ol class="guide-steps">
+              <li><strong>Snap this window to one side.</strong> On <strong>Windows</strong>, hold <kbd>⊞ Win</kbd> + <kbd>←</kbd> or <kbd>→</kbd>. On a <strong>Mac</strong>, hover the green <span aria-hidden="true">⤢</span> window button and choose a side (or use a tool like Rectangle or Magnet).</li>
+              <li><strong>Open what you want to read</strong> — a document, slide, or app — on the <strong>other</strong> half.</li>
+              <li>Click <strong>Share My Screen to Magnify</strong>, then pick that half in the share picker (below).</li>
+              <li><strong>Zoom and pan</strong> the magnified side. The other half stays free for you to work in.</li>
+            </ol>
+          </section>
+
+          <!-- What you can pick in the share picker -->
+          <section class="guide-figure-block">
+            <h2>Pick a tab, a window, or your whole screen</h2>
+            <p>When you start sharing, your browser asks what to capture. Each option suits a different job:</p>
+            <figure class="guide-figure">
+              <svg viewBox="0 0 640 300" class="guide-svg" role="img" aria-label="The browser's share dialog with three choices side by side: a single browser tab, one app window, or your entire screen or a second display.">
+                <rect x="36" y="20" width="568" height="260" rx="14" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <text x="62" y="58" font-size="19" font-weight="800" fill="var(--text-color)">Choose what to share</text>
+                <!-- Tile 1: a tab (recommended, highlighted) -->
+                <rect x="62" y="80" width="160" height="156" rx="11" fill="var(--bg-color)" stroke="var(--text-color)" stroke-width="3.5"/>
+                <rect x="80" y="104" width="124" height="74" rx="6" fill="var(--text-color)" opacity="0.07"/>
+                <rect x="80" y="104" width="58" height="16" rx="5" fill="var(--text-color)" opacity="0.55"/>
+                <g fill="var(--text-color)" opacity="0.3"><rect x="90" y="134" width="92" height="7" rx="3.5"/><rect x="90" y="150" width="74" height="7" rx="3.5"/></g>
+                <text x="142" y="204" text-anchor="middle" font-size="15" font-weight="800" fill="var(--text-color)">A tab</text>
+                <text x="142" y="223" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--text-color)" opacity="0.65">Sharpest</text>
+                <!-- Tile 2: a window -->
+                <rect x="240" y="80" width="160" height="156" rx="11" fill="var(--bg-color)" stroke="var(--border-color)" stroke-width="2.5"/>
+                <rect x="262" y="108" width="116" height="78" rx="7" fill="var(--text-color)" opacity="0.07" stroke="var(--text-color)" stroke-opacity="0.25" stroke-width="2"/>
+                <rect x="262" y="108" width="116" height="18" rx="7" fill="var(--text-color)" opacity="0.16"/>
+                <circle cx="274" cy="117" r="3" fill="var(--text-color)" opacity="0.5"/><circle cx="285" cy="117" r="3" fill="var(--text-color)" opacity="0.35"/>
+                <text x="320" y="212" text-anchor="middle" font-size="15" font-weight="800" fill="var(--text-color)">A window</text>
+                <!-- Tile 3: entire screen / second display -->
+                <rect x="418" y="80" width="160" height="156" rx="11" fill="var(--bg-color)" stroke="var(--border-color)" stroke-width="2.5"/>
+                <rect x="446" y="106" width="104" height="66" rx="6" fill="var(--text-color)" opacity="0.07" stroke="var(--text-color)" stroke-opacity="0.25" stroke-width="2"/>
+                <rect x="486" y="172" width="24" height="9" fill="var(--text-color)" opacity="0.3"/>
+                <rect x="470" y="181" width="56" height="6" rx="3" fill="var(--text-color)" opacity="0.3"/>
+                <text x="498" y="212" text-anchor="middle" font-size="15" font-weight="800" fill="var(--text-color)">Whole screen</text>
+              </svg>
+              <figcaption>Your browser’s “Choose what to share” dialog.</figcaption>
+            </figure>
+            <ul class="guide-list">
+              <li><strong>A browser tab</strong> — the sharpest, lowest-effort choice for a single web page or online document.</li>
+              <li><strong>A window</strong> — one specific app, even as you move or resize it; everything else stays private.</li>
+              <li><strong>Your whole screen or a second display</strong> — capture everything, or share an entire second monitor (see below).</li>
+            </ul>
+          </section>
+
+          <!-- Second display -->
+          <section class="guide-figure-block">
+            <h2>Got a second monitor? Magnify it from your main one</h2>
+            <p>If you run two displays, share the <strong>second</strong> screen and keep the magnifier on your <strong>main</strong> one. Now the whole second monitor is enlarged in front of you while it stays at normal size for everyone looking at it.</p>
+            <figure class="guide-figure">
+              <svg viewBox="0 0 660 300" class="guide-svg" role="img" aria-label="Two monitors side by side. The second display is being shared, and its contents appear enlarged inside the magnifier running on the main display.">
+                <!-- Main monitor (left) running the magnifier -->
+                <rect x="28" y="40" width="288" height="186" rx="12" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <rect x="42" y="54" width="260" height="146" rx="6" fill="var(--bg-color)" stroke="var(--border-color)" stroke-width="2"/>
+                <path d="M150 226 h44 l10 22 h-64 z" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <rect x="120" y="248" width="104" height="11" rx="5.5" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <text x="172" y="84" text-anchor="middle" font-size="58" font-weight="800" fill="var(--text-color)">B</text>
+                <circle cx="232" cy="120" r="30" fill="none" stroke="var(--text-color)" stroke-width="5" opacity="0.82"/>
+                <line x1="253" y1="141" x2="276" y2="164" stroke="var(--text-color)" stroke-width="7" stroke-linecap="round" opacity="0.82"/>
+                <text x="172" y="188" text-anchor="middle" class="guide-svg-tag">Main display · magnifier</text>
+                <!-- Second monitor (right) being shared -->
+                <rect x="392" y="64" width="240" height="150" rx="11" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <rect x="404" y="76" width="216" height="114" rx="6" fill="var(--bg-color)" stroke="var(--border-color)" stroke-width="2"/>
+                <path d="M488 214 h36 l9 18 h-54 z" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <rect x="464" y="232" width="84" height="10" rx="5" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <text x="512" y="146" text-anchor="middle" font-size="44" font-weight="800" fill="var(--text-color)" opacity="0.85">B</text>
+                <!-- shared badge -->
+                <rect x="416" y="86" width="74" height="20" rx="10" fill="var(--text-color)"/>
+                <text x="453" y="100" text-anchor="middle" font-size="11" font-weight="800" fill="var(--bg-color)">SHARING</text>
+                <!-- flow arrow second → main -->
+                <path d="M392 150 C 354 150, 348 120, 312 120" fill="none" stroke="var(--text-color)" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round" opacity="0.7"/>
+                <path d="M320 113 l-12 7 12 7 z" fill="var(--text-color)" opacity="0.7"/>
+              </svg>
+              <figcaption>Share display B; magnify it on display A.</figcaption>
+            </figure>
+          </section>
+
+          <p class="guide-note">In local mode your screen capture never leaves your computer — nothing is uploaded or recorded.</p>
+
+          <footer class="guide-foot">
+            <button type="button" class="btn-cta" data-guide-start>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+              Got it — open the magnifier
+            </button>
+            <a class="guide-crosslink" href="/guide/vdo-link" data-guide-nav="link">
+              Magnifying a <strong>different</strong> device instead? See “Paste a VDO.ninja link”
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+            </a>
+          </footer>
+        </article>
+
+        <!-- ───────────── GUIDE B · PASTE A VDO.NINJA LINK ───────────── -->
+        <article class="guide-doc" id="guide-doc-link" hidden>
+          <header class="guide-head">
+            <span class="guide-eyebrow">Getting started</span>
+            <h1>Magnify another device with a link</h1>
+            <p class="guide-lede">Enlarge a screen or camera from a <strong>different</strong> computer or phone over the internet — perfect for a remote whiteboard, a classroom camera, or helping someone read their own display.</p>
+          </header>
+
+          <!-- The big picture: their screen → link → your magnifier -->
+          <section class="guide-figure-block">
+            <h2>How it works</h2>
+            <p>The other device shares its screen and gets a <strong>view link</strong>. You open that link here, and their screen appears under the glass — live.</p>
+            <figure class="guide-figure">
+              <svg viewBox="0 0 680 300" class="guide-svg" role="img" aria-label="Their computer shares its screen to VDO.ninja, which hands back a link. You open that link in VDO Magnifier and see their screen, enlarged.">
+                <!-- LEFT: their device sharing -->
+                <rect x="24" y="86" width="170" height="118" rx="12" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <rect x="36" y="98" width="146" height="80" rx="5" fill="var(--bg-color)" stroke="var(--border-color)" stroke-width="2"/>
+                <rect x="74" y="204" width="70" height="9" rx="4.5" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <g fill="var(--text-color)" opacity="0.28"><rect x="48" y="112" width="80" height="8" rx="4"/><rect x="48" y="128" width="116" height="8" rx="4"/><rect x="48" y="144" width="92" height="8" rx="4"/></g>
+                <rect x="40" y="100" width="58" height="16" rx="8" fill="var(--text-color)"/>
+                <text x="69" y="113" text-anchor="middle" font-size="10.5" font-weight="800" fill="var(--bg-color)">SHARING</text>
+                <text x="109" y="238" text-anchor="middle" class="guide-svg-tag">Their computer</text>
+                <!-- MIDDLE: vdo.ninja relay -->
+                <ellipse cx="340" cy="118" rx="74" ry="40" fill="var(--text-color)" opacity="0.06" stroke="var(--border-color)" stroke-width="2.5"/>
+                <path d="M312 118 a8 8 0 0 1 8 -8 h10 a8 8 0 0 1 0 16 m16 -16 h10 a8 8 0 0 1 8 8 a8 8 0 0 1 -8 8 h-10 m-16 0 h-2" fill="none" stroke="var(--text-color)" stroke-width="3.5" stroke-linecap="round" opacity="0.85"/>
+                <text x="340" y="166" text-anchor="middle" class="guide-svg-tag">vdo.ninja link</text>
+                <!-- arrows -->
+                <path d="M198 128 H 262" fill="none" stroke="var(--text-color)" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round" opacity="0.7"/>
+                <path d="M256 121 l12 7 -12 7 z" fill="var(--text-color)" opacity="0.7"/>
+                <path d="M418 128 H 482" fill="none" stroke="var(--text-color)" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round" opacity="0.7"/>
+                <path d="M476 121 l12 7 -12 7 z" fill="var(--text-color)" opacity="0.7"/>
+                <!-- RIGHT: your magnifier -->
+                <rect x="486" y="74" width="170" height="130" rx="12" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <rect x="498" y="86" width="146" height="92" rx="5" fill="var(--bg-color)" stroke="var(--border-color)" stroke-width="2"/>
+                <text x="540" y="150" font-size="52" font-weight="800" fill="var(--text-color)">A</text>
+                <circle cx="600" cy="120" r="26" fill="none" stroke="var(--text-color)" stroke-width="5" opacity="0.82"/>
+                <line x1="618" y1="138" x2="636" y2="156" stroke="var(--text-color)" stroke-width="7" stroke-linecap="round" opacity="0.82"/>
+                <text x="571" y="238" text-anchor="middle" class="guide-svg-tag">You — magnify it</text>
+              </svg>
+              <figcaption>They share a link; you open it here and magnify their screen.</figcaption>
+            </figure>
+          </section>
+
+          <!-- Step 1: create the link -->
+          <section class="guide-figure-block">
+            <h2>Step 1 · On the other device, get a link</h2>
+            <figure class="guide-figure">
+              <svg viewBox="0 0 560 290" class="guide-svg" role="img" aria-label="A browser at vdo.ninja with a Share Screen button, producing a view link with a copy button.">
+                <rect x="40" y="28" width="480" height="234" rx="12" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <!-- browser chrome -->
+                <rect x="40" y="28" width="480" height="40" rx="12" fill="var(--text-color)" opacity="0.08"/>
+                <circle cx="64" cy="48" r="6" fill="var(--text-color)" opacity="0.5"/><circle cx="84" cy="48" r="6" fill="var(--text-color)" opacity="0.34"/><circle cx="104" cy="48" r="6" fill="var(--text-color)" opacity="0.22"/>
+                <rect x="130" y="38" width="360" height="20" rx="10" fill="var(--bg-color)" stroke="var(--border-color)" stroke-width="1.5"/>
+                <text x="146" y="52" font-size="13" font-weight="700" fill="var(--text-color)" opacity="0.78">vdo.ninja</text>
+                <!-- share button -->
+                <rect x="176" y="104" width="208" height="52" rx="12" fill="var(--text-color)"/>
+                <path d="M210 130 h-14 v18 h28 v-18 h-14 m0 0 v-18 m-9 9 l9 -9 9 9" fill="none" stroke="var(--bg-color)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <text x="296" y="136" text-anchor="middle" font-size="16" font-weight="800" fill="var(--bg-color)">Share your screen</text>
+                <!-- generated link + copy -->
+                <rect x="80" y="190" width="320" height="44" rx="10" fill="var(--bg-color)" stroke="var(--border-color)" stroke-width="2"/>
+                <text x="98" y="217" font-size="14.5" font-family="monospace" fill="var(--text-color)" opacity="0.82">vdo.ninja/?view=AbC123</text>
+                <rect x="410" y="190" width="70" height="44" rx="10" fill="var(--text-color)"/>
+                <rect x="430" y="202" width="22" height="26" rx="4" fill="none" stroke="var(--bg-color)" stroke-width="2.4"/>
+                <rect x="438" y="196" width="22" height="26" rx="4" fill="var(--text-color)" stroke="var(--bg-color)" stroke-width="2.4"/>
+              </svg>
+              <figcaption>Open vdo.ninja → Share your screen → copy the view link.</figcaption>
+            </figure>
+            <ol class="guide-steps">
+              <li>On the <strong>other</strong> device, open <strong>vdo.ninja</strong> in a browser (Chrome or Edge work best).</li>
+              <li>Choose <strong>Share your screen</strong> (or a camera). It starts a stream and shows a <strong>link to share with viewers</strong>.</li>
+              <li><strong>Copy that link</strong> — it looks like <code>https://vdo.ninja/?view=…</code> — and send it to yourself however’s easiest.</li>
+            </ol>
+          </section>
+
+          <!-- Step 2: paste it here -->
+          <section class="guide-figure-block">
+            <h2>Step 2 · Paste it here and magnify</h2>
+            <figure class="guide-figure">
+              <svg viewBox="0 0 560 200" class="guide-svg" role="img" aria-label="The magnifier's home screen with the copied link pasted into the box and the arrow button ready to press.">
+                <rect x="40" y="56" width="480" height="92" rx="16" fill="var(--panel-bg)" stroke="var(--border-color)" stroke-width="3"/>
+                <text x="64" y="92" font-size="15" font-weight="800" fill="var(--text-color)">Paste a VDO.ninja link</text>
+                <rect x="64" y="104" width="356" height="30" rx="8" fill="var(--bg-color)" stroke="var(--border-color)" stroke-width="2"/>
+                <text x="78" y="124" font-size="13.5" font-family="monospace" fill="var(--text-color)" opacity="0.82">https://vdo.ninja/?view=AbC123</text>
+                <rect x="430" y="100" width="66" height="38" rx="10" fill="var(--text-color)"/>
+                <path d="M452 119 h18 m-7 -7 l7 7 -7 7" fill="none" stroke="var(--bg-color)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <figcaption>Drop the link in the home-screen box and press <span aria-hidden="true">→</span>.</figcaption>
+            </figure>
+            <p>Back here, paste the link into the box on the home screen and press the <strong>→</strong> arrow. Their screen opens under the glass — zoom, pan, recolor, and read it aloud just like any other source.</p>
+          </section>
+
+          <p class="guide-note">Remote viewing travels over the VDO.ninja relay, so switch on <strong>Online relay</strong> in <strong>Settings → Experimental</strong> first. Use Chrome or Edge if you also want read-aloud on a remote stream.</p>
+
+          <footer class="guide-foot">
+            <button type="button" class="btn-cta" data-guide-start>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+              Got it — open the magnifier
+            </button>
+            <a class="guide-crosslink" href="/guide/your-screen" data-guide-nav="screen">
+              Want to magnify <strong>your own</strong> screen instead? See “Share your own screen”
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+            </a>
+          </footer>
+        </article>
+
+      </div><!-- /.guide-wrap -->
+      </div><!-- /#guide-zoom-layer -->
+    </div>
+    <!-- ============ END GETTING-STARTED GUIDE PAGES ============ -->
 
     <!-- Setup Screen (Scrollable, Native HTML Mode) -->
     <div id="setup-screen-wrapper">
@@ -4541,6 +4936,21 @@
     </main><!-- /#main-content -->
 
     <script>
+        // --- Stable resource + route base (captured at load, before any History routing) ---
+        // The app reaches /tesseract/ and /rapidocr/ relative to where its HTML lives. The
+        // getting-started guide uses History routing to /guide/your-screen etc., which changes
+        // document.baseURI — so we capture the real app directory ONCE here, before any pushState,
+        // and resolve OCR/TTS asset URLs against it. That way navigating to a /guide/* route can
+        // never make tesseract/rapidocr load from /guide/tesseract/. A deep-loaded guide URL has
+        // its trailing /guide/<x> segment stripped back to the real app root.
+        const _RESOURCE_BASE = (() => {
+            const dir = new URL('.', window.location.href);            // directory of the loaded doc
+            dir.pathname = dir.pathname.replace(/\/guide\/$/, '/');    // deep-loaded guide → real root
+            return dir.href;
+        })();
+        // App "home" path the URL returns to when leaving a guide / entering the magnifier.
+        const _APP_HOME_PATH = (window.location.pathname.replace(/\/guide\/[^/]*\/?$/, '/') || '/');
+
         // --- Global Constants ---
         const CONSTANTS = {
             MAX_SCALE: 40,
@@ -4881,6 +5291,9 @@
         function renderFontPicker() {
             const grid = document.getElementById('font-picker-grid');
             if (!grid) return;
+            // Preserve the SR/keyboard focus across the rebuild (parity with the theme/toolbar
+            // rebuilds) — the focused radio is restored by its stable id afterwards.
+            const _restoreFontFocus = preserveFocus('#font-picker-grid', 'value');
             grid.innerHTML = '';
             FONT_REGISTRY.forEach(f => {
                 _injectFontResource(f); // load so the preview renders in the real font
@@ -4890,7 +5303,7 @@
                 label.className = 'font-card' + (on ? ' font-active' : '');
                 label.dataset.fontId = f.id;
                 label.innerHTML =
-                    `<input type="radio" name="app-font" value="${f.id}"${on ? ' checked' : ''} ` +
+                    `<input type="radio" name="app-font" id="font-radio-${f.id}" value="${f.id}"${on ? ' checked' : ''} ` +
                         `aria-label="${f.name} font${f.note ? ' — ' + f.note : ''}">` +
                     `<span class="font-card-preview" style="font-family:${famAttr}" aria-hidden="true">Aa</span>` +
                     `<span class="font-card-name" style="font-family:${famAttr}">${f.name}</span>` +
@@ -4903,6 +5316,7 @@
                 });
                 grid.appendChild(label);
             });
+            _restoreFontFocus();
         }
         // Keep BOTH the curated cards and the search results in sync with the active
         // font, wherever it was changed (card, search, More Options cycle, restore).
@@ -5100,6 +5514,20 @@
             };
         }
 
+        // Friendly aria-valuetext for the spacing sliders — SR users hear "Wide, 0.30 em"
+        // instead of a bare "0.3", matching the visible (but aria-hidden) <output> labels.
+        function _spacingValueText(kind, v) {
+            if (kind === 'line') {
+                if (v == null) return 'Normal';
+                const w = v <= 1.6 ? 'Relaxed' : v <= 2.0 ? 'Wide' : 'Very wide';
+                return `${w}, ${_fmt2(v)} times line height`;
+            }
+            if (!v) return 'Default';
+            const w = kind === 'letter'
+                ? (v <= 0.1 ? 'Slightly wide' : v <= 0.25 ? 'Wide' : 'Very wide')
+                : (v <= 0.25 ? 'Slightly wide' : v <= 0.6 ? 'Wide' : 'Very wide');
+            return `${w}, ${_fmt2(v)} em`;
+        }
         function applyTextSpacing(save = true) {
             const root = document.documentElement.style;
             root.setProperty('--letter-spacing', (state.letterSpacing || 0) + 'em');
@@ -5111,10 +5539,11 @@
             const ls = document.getElementById('letter-spacing-slider');
             const ws = document.getElementById('word-spacing-slider');
             const lh = document.getElementById('line-spacing-slider');
-            if (ls) { ls.value = state.letterSpacing; const o = document.getElementById('letter-spacing-val'); if (o) o.textContent = _fmt2(state.letterSpacing); }
-            if (ws) { ws.value = state.wordSpacing;   const o = document.getElementById('word-spacing-val');   if (o) o.textContent = _fmt2(state.wordSpacing); }
+            if (ls) { ls.value = state.letterSpacing; ls.setAttribute('aria-valuetext', _spacingValueText('letter', state.letterSpacing)); const o = document.getElementById('letter-spacing-val'); if (o) o.textContent = _fmt2(state.letterSpacing); }
+            if (ws) { ws.value = state.wordSpacing;   ws.setAttribute('aria-valuetext', _spacingValueText('word', state.wordSpacing));   const o = document.getElementById('word-spacing-val');   if (o) o.textContent = _fmt2(state.wordSpacing); }
             if (lh) {
                 lh.value = lineNormal ? lh.min : state.lineSpacing;
+                lh.setAttribute('aria-valuetext', _spacingValueText('line', lineNormal ? null : state.lineSpacing));
                 const o = document.getElementById('line-spacing-val');
                 if (o) o.textContent = lineNormal ? 'Normal' : _fmt2(state.lineSpacing);
             }
@@ -5391,11 +5820,11 @@
             switch (actionId) {
                 case 'zoom-in':
                     e.preventDefault(); // prevent browser zoom (Firefox fires on Shift+=)
-                    performZoom(1);
+                    requestZoom(1);     // coalesced — holding the key won't flood reflows
                     break;
                 case 'zoom-out':
                     e.preventDefault(); // prevent browser zoom (some browsers fire on bare -)
-                    performZoom(-1);
+                    requestZoom(-1);
                     break;
                 case 'hover-pan':    runToolbarAction('btn-toggle-hover-pan'); break;
                 case 'reset-view':   runToolbarAction('btn-reset-view'); break;
@@ -5644,8 +6073,19 @@
 
         let readingDragTarget = null; 
         let windowHasStartedOnce = false;
-        let storageFailed = false;
-        let customZoomStep = null; 
+        // Probe localStorage up front (write + read + remove a tiny key). In private/locked-down
+        // modes this throws or no-ops, so we know immediately that saves won't persist instead of
+        // silently "saving" until the first real write fails.
+        let storageFailed = (() => {
+            try {
+                const k = '__vdoMag_probe__';
+                localStorage.setItem(k, '1');
+                const ok = localStorage.getItem(k) === '1';
+                localStorage.removeItem(k);
+                return !ok;
+            } catch (e) { return true; }
+        })();
+        let customZoomStep = null;
         let vdoOrigin = '*';
         // Cached workspace bounding rect — refreshed on resize, invalidated on layout changes.
         // Declared here (hoisted) because startBtn handler and screen share both write it
@@ -5940,6 +6380,46 @@
         // until the page reloads. While set, no save (debounced or unload-flush) may run —
         // otherwise stale in-memory state would clobber the freshly imported file.
         let _settingsImporting = false;
+
+        // --- Settings-import validation ---
+        // An imported file is untrusted input. Sanitise it before persisting: keep only known
+        // keys whose value type matches the live default, drop NaN/∞, and clamp the numbers that
+        // drive CSS filters/transforms so a malformed (or hostile) file can't produce broken
+        // renders. Themes must be objects with a string id/name and hex bg/text/panel colors.
+        function _sanitizeImportedPrefs(raw) {
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+            const clean = {};
+            for (const key of Object.keys(raw)) {
+                if (!(key in state)) continue;                       // unknown / typo key
+                const def = state[key], val = raw[key];
+                if (def === null) {                                  // nullable (e.g. lineSpacing)
+                    if (val === null || (typeof val === 'number' && isFinite(val))) clean[key] = val;
+                } else if (typeof val !== typeof def) {
+                    continue;                                        // type mismatch
+                } else if (typeof val === 'number' && !isFinite(val)) {
+                    continue;                                        // NaN / Infinity
+                } else {
+                    clean[key] = val;                                // primitives, plus JSON-valid objects/arrays
+                }
+            }
+            const clamp = (k, lo, hi) => { if (typeof clean[k] === 'number') clean[k] = Math.max(lo, Math.min(hi, clean[k])); };
+            clamp('streamScale', 1, 40); clamp('homeScale', 0.5, 4); clamp('panX', -1e5, 1e5); clamp('panY', -1e5, 1e5);
+            clamp('letterSpacing', 0, 1); clamp('wordSpacing', 0, 2); clamp('lineSpacing', 1, 4);
+            clamp('videoBrightness', 0, 3); clamp('videoContrast', 0, 3); clamp('videoSaturation', 0, 3);
+            clamp('videoSepia', 0, 1); clamp('videoHue', -360, 360); clamp('videoBlur', 0, 30);
+            clamp('videoGamma', 0.1, 4); clamp('videoSharpen', 0, 1);
+            clamp('menubarScale', 0.4, 3); clamp('textScale', 0.5, 3);
+            clamp('ttsRate', 0.5, 3); clamp('ttsPitch', 0, 2);
+            return Object.keys(clean).length ? clean : null;
+        }
+        function _sanitizeImportedThemes(raw) {
+            if (!Array.isArray(raw)) return null;
+            const hex = (s) => typeof s === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(s);
+            const clean = raw.filter(t => t && typeof t === 'object' && !Array.isArray(t) &&
+                typeof t.id === 'string' && typeof t.name === 'string' && hex(t.bg) && hex(t.text) && hex(t.panel));
+            return clean.length ? clean : null;
+        }
+
         function _writePrefsNow() {
             if (storageFailed || state.noMemory || _settingsImporting) return;
             try {
@@ -6083,6 +6563,11 @@
 
         // --- UI Rendering ---
         let previewTimeout;
+        // Revert a hover/focus preview to the committed active theme. Uses the committed
+        // render path (renderColors() with no arg) rather than applyTheme(activeId, true) so
+        // Natural Colors' light/dark resolution is honoured — otherwise reverting in light mode
+        // briefly snapped back to Natural's raw dark palette.
+        function _revertThemePreview() { renderColors(); updateVisuals(); }
         function bindPreviewEvents(btn, themeId) {
             btn.addEventListener('mouseenter', () => {
                 clearTimeout(previewTimeout);
@@ -6090,7 +6575,7 @@
             });
             btn.addEventListener('mouseleave', () => {
                 clearTimeout(previewTimeout);
-                previewTimeout = setTimeout(() => applyTheme(state.activeThemeId, true), 100);
+                previewTimeout = setTimeout(_revertThemePreview, 100);
             });
             btn.addEventListener('focus', () => {
                 clearTimeout(previewTimeout);
@@ -6098,7 +6583,7 @@
             });
             btn.addEventListener('blur', () => {
                 clearTimeout(previewTimeout);
-                applyTheme(state.activeThemeId, true);
+                _revertThemePreview();
             });
         }
 
@@ -6189,26 +6674,123 @@
             else chevron.setAttribute('points', '6 9 12 15 18 9');
         });
 
-        // --- In-page theme picker (landing color section) — applies app-wide ---
-        function _populateIntroThemeSelect() {
-            const sel = document.getElementById('intro-theme-select');
-            if (!sel) return;
-            sel.innerHTML = '';
-            themes.forEach((t, i) => {
-                const opt = document.createElement('option');
-                opt.value = t.id;
-                opt.textContent = (i <= 8 ? i + ': ' : '') + t.name;   // mirror the 0–8 hotkey labels
-                sel.appendChild(opt);
+        // --- In-page theme picker (landing color section) — a custom dropdown with hover
+        //     preview + drag/keyboard reorder, applied app-wide. Reuses the swatch preview
+        //     (bindPreviewEvents) and the shared drag handlers, so reordering here reorders
+        //     the global `themes` list (and every other theme surface) too. ---
+        let _introThemeMenuOpen = false;
+        function _renderIntroThemeDropdown() {
+            const menu = document.getElementById('intro-theme-menu');
+            if (!menu) return;
+            _syncIntroThemeTrigger();   // trigger label/swatch reflect the active theme
+            menu.innerHTML = '';
+            themes.forEach((t, index) => {
+                const opt = document.createElement('button');
+                opt.type = 'button';
+                opt.className = 'intro-theme-opt' + (t.id === state.activeThemeId ? ' active' : '');
+                opt.setAttribute('role', 'option');
+                opt.setAttribute('aria-selected', t.id === state.activeThemeId ? 'true' : 'false');
+                opt.setAttribute('data-theme-id', t.id);
+                const pinned = (t.id === 'nat');   // Natural Colors is pinned to first
+                opt.draggable = !pinned;
+                opt.title = pinned ? `${t.name} (pinned first)` : `${t.name} — drag or Shift+Arrow to reorder`;
+                opt.innerHTML =
+                    `<span class="intro-theme-opt-sw" aria-hidden="true" style="background:${t.bg};color:${t.text}">Aa</span>` +
+                    `<span class="intro-theme-opt-name">${index <= 8 ? index + ': ' : ''}${t.name}</span>`;
+                opt.onclick = () => { applyTheme(t.id, false); _closeIntroThemeMenu(true); };
+                bindPreviewEvents(opt, t.id);   // hover/focus = instant live preview
+                opt.addEventListener('keydown', (e) => _introThemeOptKeydown(e, t.id));
+                if (!pinned) {
+                    opt.ondragstart = (e) => handleDragStart(e, t.id);
+                    opt.ondragover  = handleDragOver;
+                    opt.ondragleave = handleDragLeave;
+                    opt.ondrop      = (e) => handleDrop(e, t.id);
+                    opt.ondragend   = (e) => { e.target.style.opacity = '1'; };
+                }
+                menu.appendChild(opt);
             });
-            const create = document.createElement('option');
-            create.value = '__create__';
-            create.textContent = '✎ Create your own…';
-            sel.appendChild(create);
-            if (themes.some(t => t.id === state.activeThemeId)) sel.value = state.activeThemeId;
+            const create = document.createElement('button');
+            create.type = 'button';
+            create.className = 'intro-theme-opt intro-theme-create';
+            create.setAttribute('role', 'option');
+            create.innerHTML = `<span class="intro-theme-opt-sw" aria-hidden="true">✎</span><span class="intro-theme-opt-name">Create your own…</span>`;
+            create.onclick = () => { _closeIntroThemeMenu(false); openCustomModal(); };
+            menu.appendChild(create);
         }
-        function _syncIntroThemeSelect() {
-            const sel = document.getElementById('intro-theme-select');
-            if (sel && Array.from(sel.options).some(o => o.value === state.activeThemeId)) sel.value = state.activeThemeId;
+        function _syncIntroThemeTrigger() {
+            const name = document.getElementById('intro-theme-trigger-name');
+            const sw = document.getElementById('intro-theme-trigger-sw');
+            const active = themes.find(t => t.id === state.activeThemeId) || themes[0];
+            if (!active) return;
+            if (name) name.textContent = active.name;
+            if (sw) { sw.style.background = active.bg; sw.style.color = active.text; }
+            document.querySelectorAll('#intro-theme-menu .intro-theme-opt[data-theme-id]').forEach(o => {
+                const on = o.getAttribute('data-theme-id') === state.activeThemeId;
+                o.classList.toggle('active', on);
+                o.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+        }
+        function _introThemeReorder(themeId, dir) {
+            if (themeId === 'nat') return;            // pinned
+            const idx = themes.findIndex(t => t.id === themeId);
+            if (idx < 0) return;
+            const newIdx = idx + dir;
+            if (newIdx < 1 || newIdx >= themes.length) return;   // index 0 reserved for Natural Colors
+            const [moved] = themes.splice(idx, 1);
+            themes.splice(newIdx, 0, moved);
+            savePrefs();
+            renderAllThemes();   // rebuilds this menu + every other theme surface
+            showStatus(dir > 0 ? 'Moved theme later' : 'Moved theme earlier');
+            requestAnimationFrame(() => {
+                const el = document.querySelector(`#intro-theme-menu .intro-theme-opt[data-theme-id="${moved.id}"]`);
+                if (el) el.focus();
+            });
+        }
+        function _introThemeOptKeydown(e, themeId) {
+            const menu = document.getElementById('intro-theme-menu');
+            if (!menu) return;
+            const opts = Array.from(menu.querySelectorAll('.intro-theme-opt'));
+            const i = opts.indexOf(e.currentTarget);
+            if (e.shiftKey && (e.key === 'ArrowDown' || e.key === 'ArrowRight')) { e.preventDefault(); _introThemeReorder(themeId, +1); }
+            else if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowLeft')) { e.preventDefault(); _introThemeReorder(themeId, -1); }
+            else if (e.key === 'ArrowDown') { e.preventDefault(); (opts[i + 1] || opts[0]).focus(); }
+            else if (e.key === 'ArrowUp')   { e.preventDefault(); (opts[i - 1] || opts[opts.length - 1]).focus(); }
+            else if (e.key === 'Home')      { e.preventDefault(); opts[0].focus(); }
+            else if (e.key === 'End')       { e.preventDefault(); opts[opts.length - 1].focus(); }
+        }
+        function _openIntroThemeMenu() {
+            const menu = document.getElementById('intro-theme-menu');
+            const trigger = document.getElementById('intro-theme-trigger');
+            if (!menu || _introThemeMenuOpen) return;
+            _renderIntroThemeDropdown();
+            menu.hidden = false;
+            _introThemeMenuOpen = true;
+            if (trigger) trigger.setAttribute('aria-expanded', 'true');
+            const act = menu.querySelector('.intro-theme-opt.active') || menu.querySelector('.intro-theme-opt');
+            if (act) requestAnimationFrame(() => act.focus());
+            setTimeout(() => {   // defer so the opening click doesn't immediately close it
+                document.addEventListener('click', _introThemeOutside, true);
+                document.addEventListener('keydown', _introThemeEsc, true);
+            }, 0);
+        }
+        function _closeIntroThemeMenu(restoreFocus) {
+            const menu = document.getElementById('intro-theme-menu');
+            const trigger = document.getElementById('intro-theme-trigger');
+            if (!menu || !_introThemeMenuOpen) return;
+            _revertThemePreview();   // drop any lingering hover preview (honours Natural light/dark)
+            menu.hidden = true;
+            _introThemeMenuOpen = false;
+            if (trigger) trigger.setAttribute('aria-expanded', 'false');
+            document.removeEventListener('click', _introThemeOutside, true);
+            document.removeEventListener('keydown', _introThemeEsc, true);
+            if (restoreFocus && trigger) trigger.focus();
+        }
+        function _introThemeOutside(e) {
+            const dd = document.querySelector('.intro-theme-dd');
+            if (dd && !dd.contains(e.target)) _closeIntroThemeMenu(false);
+        }
+        function _introThemeEsc(e) {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); _closeIntroThemeMenu(true); }
         }
 
         function updateActiveThemeUI() {
@@ -6227,7 +6809,7 @@
                     btn.style.outlineOffset = isSelected ? '2px' : '';
                 }
             });
-            _syncIntroThemeSelect();
+            _syncIntroThemeTrigger();
         }
 
         function createDropdownThemeBtn(t, index, displayName) {
@@ -6397,7 +6979,7 @@
                 }
             });
 
-            _populateIntroThemeSelect();   // keep the landing theme dropdown in sync with the list
+            _renderIntroThemeDropdown();   // keep the landing theme dropdown in sync with the list
             updateActiveThemeUI();
             adjustToolbar();
             _restoreThemeFocus();   // put the SR cursor back on the swatch that was focused
@@ -6556,6 +7138,9 @@
             if (!t) return;
 
             if (!isPreview) {
+                // Cancel any pending hover-preview timer so a queued mouseleave/mouseenter
+                // can't briefly revert or re-preview over the theme we're committing.
+                clearTimeout(previewTimeout);
                 state.activeThemeId = themeId;
                 savePrefs();
                 updateActiveThemeUI();
@@ -6881,6 +7466,9 @@
         function enterApp(opts) {
             introZoomLevel = 1; applyIntroZoom();   // leave the landing at 100% so the app isn't stuck zoomed
             document.body.classList.remove('intro-active');
+            document.body.classList.remove('guide-active');   // also leave a guide page if we entered from one
+            document.title = _DEFAULT_TITLE;
+            _routePush(_APP_HOME_PATH);             // clean URL + restore baseURI so OCR/TTS assets resolve right
             if (opts && opts.demo) {
                 // "Try an example" — the example button starts the demo stream + workspace itself
                 const ex = document.getElementById('btn-example-stream');
@@ -6890,6 +7478,66 @@
             if (wrapper && wrapper.scrollTo) wrapper.scrollTo(0, 0);
             const input = document.getElementById('vdo-input');
             if (input) requestAnimationFrame(() => input.focus());
+        }
+
+        // --- Getting-started guide pages (routed: /guide/your-screen, /guide/vdo-link) ---
+        // Real pages, not a modal. showGuide() swaps body.intro-active → body.guide-active and,
+        // on user navigation, pushes a clean URL via the History API. _applyRoute() reads the URL
+        // on load + browser back/forward. Asset URLs resolve against _RESOURCE_BASE (captured at
+        // load), so a /guide/* path can never break OCR/TTS loading. On file:// the URL rewriting
+        // is skipped but the page-swapping still works.
+        const _DEFAULT_TITLE = document.title;
+        const _GUIDE_ROUTES = { 'your-screen': 'screen', 'vdo-link': 'link' };
+        const _guidePathFor = (method) => method === 'link' ? '/guide/vdo-link' : '/guide/your-screen';
+        const _routeEnabled = () => location.protocol === 'http:' || location.protocol === 'https:';
+        let _guideReturnFocus = null;   // element to refocus when the guide closes back to the landing
+
+        function _routePush(path) {
+            if (!_routeEnabled()) return;   // file:// — keep the SPA page-swap, skip URL rewriting
+            try { if (location.pathname !== path) history.pushState({ route: path }, '', path); } catch (_) {}
+        }
+
+        // Show one guide doc as a full page. push=true when the user clicked a link/card.
+        function showGuide(method, push) {
+            const screen = document.getElementById('guide-screen');
+            if (!screen) return;
+            const isLink = method === 'link';
+            if (!document.body.classList.contains('guide-active')) {
+                _guideReturnFocus = document.activeElement;   // remember the card/link that sent us here
+            }
+            document.body.classList.remove('intro-active');
+            document.body.classList.add('guide-active');
+            const docScreen = document.getElementById('guide-doc-screen');
+            const docLink   = document.getElementById('guide-doc-link');
+            if (docScreen) docScreen.hidden = isLink;
+            if (docLink)   docLink.hidden   = !isLink;
+            document.title = (isLink ? 'Magnify another device with a link' : 'Magnify your own screen') + ' · VDO Magnifier';
+            introZoomLevel = 1; applyIntroZoom();   // each guide opens fresh at 100%
+            screen.scrollTop = 0;
+            if (push) _routePush(_guidePathFor(method));
+            requestAnimationFrame(() => screen.focus());
+        }
+
+        // Leave a guide and return to the landing overview.
+        function backToLanding(push) {
+            if (!document.body.classList.contains('guide-active')) return;
+            document.body.classList.remove('guide-active');
+            document.body.classList.add('intro-active');
+            document.title = _DEFAULT_TITLE;
+            introZoomLevel = 1; applyIntroZoom();
+            if (push) _routePush(_APP_HOME_PATH);
+            const back = (_guideReturnFocus && document.contains(_guideReturnFocus))
+                ? _guideReturnFocus : document.getElementById('intro-screen');
+            requestAnimationFrame(() => { if (back && back.focus) back.focus(); });
+        }
+
+        // Resolve the current URL to a view (called on load + popstate). On a non-guide URL it
+        // only acts if we're currently in a guide (e.g. the user pressed Back) — otherwise it
+        // leaves the landing/app untouched.
+        function _applyRoute() {
+            const m = location.pathname.match(/\/guide\/(your-screen|vdo-link)\/?$/);
+            if (m) { showGuide(_GUIDE_ROUTES[m[1]], false); return; }
+            if (document.body.classList.contains('guide-active')) backToLanding(false);
         }
 
         // --- Experimental features gating (Settings → Experimental) ---
@@ -6930,6 +7578,38 @@
                 document.getElementById(id)?.addEventListener('click', () => enterApp()));
             document.getElementById('btn-get-started-demo')?.addEventListener('click', () => enterApp({ demo: true }));
             document.getElementById('skip-to-magnifier')?.addEventListener('click', (e) => { e.preventDefault(); enterApp(); });
+
+            // --- Getting-started guide page wiring (routed /guide/*) ---
+            // Card + crosslink anchors do an in-app navigation and push a clean URL. A modifier or
+            // middle click falls through to the real href, so "open in new tab" still works and the
+            // guide URLs are genuinely shareable.
+            const _isPlainClick = (e) => !e.defaultPrevented && e.button === 0 &&
+                !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+            document.querySelectorAll('[data-guide-nav]').forEach(a =>
+                a.addEventListener('click', (e) => {
+                    if (!_isPlainClick(e)) return;
+                    e.preventDefault();
+                    showGuide(a.getAttribute('data-guide-nav'), true);
+                }));
+            // "Open the magnifier" CTAs inside a guide page
+            document.querySelectorAll('#guide-screen [data-guide-start]').forEach(b =>
+                b.addEventListener('click', () => enterApp()));
+            // Back-to-overview link: point its real href at the app home for accurate new-tab/refresh.
+            const _backLink = document.getElementById('guide-back');
+            if (_backLink) {
+                _backLink.setAttribute('href', _APP_HOME_PATH);
+                _backLink.addEventListener('click', (e) => {
+                    if (!_isPlainClick(e)) return;
+                    e.preventDefault(); backToLanding(true);
+                });
+            }
+            // Escape on a guide page returns to the overview (no modal is open here).
+            document.getElementById('guide-screen')?.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); backToLanding(true); }
+            });
+            // Browser back/forward + deep-linked /guide/* URLs.
+            window.addEventListener('popstate', _applyRoute);
+            _applyRoute();   // honour a /guide/* URL the page was opened at
 
             // Landing-page SVG motion runs only while each graphic is on screen — an
             // IntersectionObserver toggles .in-view, and the CSS gates the animations on it
@@ -6975,16 +7655,11 @@
             document.getElementById('adv-flip-v')?.addEventListener('click', () => runToolbarAction('btn-flip-v'));
             syncAdvFlipButtons();
 
-            // --- Landing color-section theme picker (applies app-wide; options filled by renderAllThemes) ---
-            const introThemeSel = document.getElementById('intro-theme-select');
-            if (introThemeSel) {
-                introThemeSel.addEventListener('change', () => {
-                    if (introThemeSel.value === '__create__') {
-                        introThemeSel.value = state.activeThemeId;   // revert; the builder handles creation
-                        openCustomModal();
-                        return;
-                    }
-                    applyTheme(introThemeSel.value, false);
+            // --- Landing color-section theme picker (custom dropdown; options built by renderAllThemes) ---
+            const introThemeTrigger = document.getElementById('intro-theme-trigger');
+            if (introThemeTrigger) {
+                introThemeTrigger.addEventListener('click', () => {
+                    if (_introThemeMenuOpen) _closeIntroThemeMenu(true); else _openIntroThemeMenu();
                 });
             }
             // Decorative SVG text must not be announced by screen readers (the SVGs already carry
@@ -7068,9 +7743,7 @@
                 if (e.key === 'Escape') { e.stopPropagation(); closeToolbarCustomizer(); return; }
                 if (e.key === 'Tab') {
                     const modal = document.getElementById('toolbar-customize-modal');
-                    const focusable = Array.from(modal.querySelectorAll(
-                        'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-                    )).filter(el => el.offsetParent !== null);
+                    const focusable = getFocusable(modal);   // robust: covers select/textarea/a[href] + visibility
                     if (!focusable.length) return;
                     const first = focusable[0], last = focusable[focusable.length - 1];
                     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -7474,7 +8147,7 @@
                 // Core layout layers are part of the static HTML and normally always
                 // present; bail rather than throw if any is missing (e.g. invoked very
                 // early, or the markup was edited). Prevents a hard crash on zoom.
-                if (!workspace || !transformLayer || !freezeOverlay) return;
+                if (!workspace || !transformLayer || !freezeOverlay || !vdoFrame) return;
                 if (state.streamScale < 1.0) state.streamScale = 1.0;
 
                 const rect = workspace.getBoundingClientRect();
@@ -7851,20 +8524,23 @@
         const INTRO_ZOOM_MAX = 20;
         let introZoomLevel = 1;
         function applyIntroZoom() {
-            const layer = document.getElementById('intro-zoom-layer');
-            const intro = document.getElementById('intro-screen');
-            if (!layer) return;
             const pageZoom   = Math.min(introZoomLevel, INTRO_ZOOM_PAGE_CAP); // reflowing browser-style zoom
             const canvasZoom = introZoomLevel / pageZoom;                     // 1 until the cap, then > 1
-            layer.style.zoom = pageZoom !== 1 ? String(pageZoom) : '';
-            layer.style.transform = canvasZoom > 1 ? `scale(${canvasZoom})` : '';
-            if (intro) intro.style.overflowX = canvasZoom > 1 ? 'auto' : '';
+            // Drives both the landing and the guide pages (whichever is visible owns the keys).
+            [['intro-zoom-layer', 'intro-screen'], ['guide-zoom-layer', 'guide-screen']].forEach(([layerId, scrollId]) => {
+                const layer = document.getElementById(layerId);
+                if (!layer) return;
+                layer.style.zoom = pageZoom !== 1 ? String(pageZoom) : '';
+                layer.style.transform = canvasZoom > 1 ? `scale(${canvasZoom})` : '';
+                const sc = document.getElementById(scrollId);
+                if (sc) sc.style.overflowX = canvasZoom > 1 ? 'auto' : '';
+            });
         }
 
         function setScale(newScale, focalClientX, focalClientY) {
             const isVideoActive = document.body.classList.contains('video-active');
-            // Landing page (no video): zoom the page itself, not the hidden video layer.
-            if (!isVideoActive && document.body.classList.contains('intro-active')) {
+            // Landing or guide page (no video): zoom the page itself, not the hidden video layer.
+            if (!isVideoActive && (document.body.classList.contains('intro-active') || document.body.classList.contains('guide-active'))) {
                 introZoomLevel = Math.max(1, Math.min(newScale, INTRO_ZOOM_MAX));
                 applyIntroZoom();
                 showStatus(`Zoom: ${Math.round(introZoomLevel * 100)}%`);
@@ -7898,9 +8574,19 @@
             savePrefs();
         }
 
+        // Coalesce key-repeat zoom to one step per animation frame. Holding +/- fires keydown
+        // ~30×/s; running setScale→updateVisuals (a layout read) + showStatus on each is the
+        // jank source. Batching to ≤1 reflow/frame keeps a held zoom smooth. (Toolbar buttons
+        // still call performZoom directly — a single click needs no coalescing.)
+        let _zoomRaf = 0, _zoomDir = 0;
+        function requestZoom(direction) {
+            _zoomDir = direction;
+            if (_zoomRaf) return;
+            _zoomRaf = requestAnimationFrame(() => { _zoomRaf = 0; performZoom(_zoomDir); });
+        }
         function performZoom(direction) {
             const isVideoActive = document.body.classList.contains('video-active');
-            const onIntro = !isVideoActive && document.body.classList.contains('intro-active');
+            const onIntro = !isVideoActive && (document.body.classList.contains('intro-active') || document.body.classList.contains('guide-active'));
             const currentScale = onIntro ? introZoomLevel : (isVideoActive ? state.streamScale : state.homeScale);
             let targetScale;
             // Step precedence: ?step= URL param → user's saved increment → adaptive curve
@@ -10065,9 +10751,7 @@
             modal.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') { e.stopPropagation(); closeAdvSettings(); }
                 if (e.key === 'Tab') {
-                    const focusable = Array.from(modal.querySelectorAll(
-                        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-                    )).filter(el => el.offsetParent !== null);
+                    const focusable = getFocusable(modal);   // robust: covers select/textarea/a[href] + visibility
                     if (!focusable.length) return;
                     const first = focusable[0], last = focusable[focusable.length - 1];
                     if (e.shiftKey && document.activeElement === first) {
@@ -10206,14 +10890,16 @@
                         // imported values. Otherwise a pending 500ms save (or the unload flush
                         // when reload fires) would serialise the old in-memory state over the
                         // file we just imported, and the reload would read back stale data.
+                        // Validate the untrusted file before persisting anything.
+                        const cleanPrefs  = _sanitizeImportedPrefs(payload.prefs);
+                        const cleanThemes = _sanitizeImportedThemes(payload.themes);
+                        if (!cleanPrefs && !cleanThemes) {
+                            throw new Error('No valid settings or themes found in this file.');
+                        }
                         _settingsImporting = true;
                         cancelPendingSave();
-                        if (payload.prefs && typeof payload.prefs === 'object' && !Array.isArray(payload.prefs)) {
-                            localStorage.setItem('vdoMagnifierPrefs', JSON.stringify(payload.prefs));
-                        }
-                        if (Array.isArray(payload.themes) && payload.themes.length) {
-                            localStorage.setItem('vdoMagnifierThemes', JSON.stringify(payload.themes));
-                        }
+                        if (cleanPrefs)  localStorage.setItem('vdoMagnifierPrefs',  JSON.stringify(cleanPrefs));
+                        if (cleanThemes) localStorage.setItem('vdoMagnifierThemes', JSON.stringify(cleanThemes));
                         setTransferStatus('✓ Settings imported — reloading…');
                         setTimeout(() => window.location.reload(), 900);
                     } catch (err) {
@@ -11013,7 +11699,7 @@
             updateTtsControls();
             _tessLoadPromise = (async () => {
                 try {
-                    const TESS_BASE  = new URL('tesseract/', window.location.href).href;
+                    const TESS_BASE  = new URL('tesseract/', _RESOURCE_BASE).href;
                     const WORKER_URL = TESS_BASE + 'worker.min.js';
                     const simd       = _wasmSimdSupported();
                     const CORE_URL   = TESS_BASE + (simd ? 'tesseract-core-simd.wasm.js' : 'tesseract-core.wasm.js');
@@ -11080,7 +11766,7 @@
         // loads its own onnxruntime-web), so the main file stays small. Availability depends on
         // the user having added the model files — we HEAD-probe for them and only offer the
         // engine when present. Fully lazy: the ~22 MB runtime + models load only when selected.
-        const RAPIDOCR_BASE = new URL('rapidocr/', window.location.href).href;
+        const RAPIDOCR_BASE = new URL('rapidocr/', _RESOURCE_BASE).href;
         let RAPIDOCR_AVAILABLE = false;
         let _rapidProbeResolved = false;  // true once the model HEAD-probe finishes
         let _rapidOcrReady = false;
@@ -11347,6 +12033,11 @@
             _stopTtsFollowLerp();
             _ttsFollowTargetY = null;
             window.speechSynthesis.cancel();
+            // Detach + drop the current utterance so its callbacks stop pinning ocrWords/ttsWordMap.
+            if (currentUtterance) {
+                currentUtterance.onboundary = currentUtterance.onend = currentUtterance.onerror = null;
+                currentUtterance = null;
+            }
             ttsIsPlaying = false;
             ttsAutoFroze = false;
             ttsUnits = [];
@@ -11767,6 +12458,10 @@
                 setTtsStatus('Speech error: ' + e.error);
             };
 
+            // Detach the previous utterance's callbacks before replacing it. Otherwise each
+            // spoken unit leaves an orphaned utterance whose onboundary/onend/onerror closures
+            // pin ttsWordMap/ocrWords alive — memory creep over long reading sessions.
+            if (currentUtterance) currentUtterance.onboundary = currentUtterance.onend = currentUtterance.onerror = null;
             currentUtterance = utt;
             ttsIsPlaying = true;
             window.speechSynthesis.speak(utt);
@@ -13920,6 +14615,9 @@
             }
             if (latestFrame) {
                 if (_frameImgCache.src !== latestFrame) {
+                    // Detach the outgoing image's handler so the old decoded frame (a large
+                    // base64 dataURL) isn't retained via its onload closure under rapid snapshots.
+                    if (_frameImgCache.img) _frameImgCache.img.onload = _frameImgCache.img.onerror = null;
                     const img = new Image();
                     _frameImgCache = { src: latestFrame, img, ready: false };
                     img.onload = () => {
