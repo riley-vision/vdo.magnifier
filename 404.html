@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>VDO Magnifier</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!--
+      GitHub Pages SPA redirect for VDO Magnifier.
+
+      GitHub Pages serves static files only — it can't rewrite /guide/your-screen to the app.
+      Instead it serves THIS file (with a 404 status, but the script still runs) for any path
+      that isn't a real file. We encode the requested path into "/?/…" on the site root and
+      bounce there; index.html's <head> restore snippet turns it back into the clean URL before
+      the app's router runs. Net effect: deep links like /guide/your-screen and /guide/vdo-link
+      work on direct load, refresh, and when shared.
+
+      pathSegmentsToKeep = 0 because the app is served at the domain root (custom domain
+      magnifier.riley.vision). For a project page like user.github.io/repo/ it would be 1.
+    -->
+    <script>
+      var pathSegmentsToKeep = 0;
+      var l = window.location;
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+        l.hash
+      );
+    </script>
+  </head>
+  <body>
+    <noscript>
+      This page needs JavaScript. Open <a href="/">magnifier.riley.vision</a> directly.
+    </noscript>
+  </body>
+</html>
